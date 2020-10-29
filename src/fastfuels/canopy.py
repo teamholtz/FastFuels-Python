@@ -3,14 +3,14 @@
 Generator for canopy fuels
 """
 
-# built-in{fil
+# built-in
 import time
 import json
 import sys
 import math
 
 # external
-import cupy as cp
+#import cupy as cp
 import numpy as np
 import gdal
 sys.path.append('../../../qFIA/src/')
@@ -235,52 +235,62 @@ class Forest:
         self.w = w
         self.h = h
 
+        dim = [w*30, h*30, 100]
+        res = [2, 2, 1]
+
+        self.domain = domain.ParameterArray(dim, res)
+
     def sample_plots(self):
 
-        sampled_cns = []
-
+        # samples are stored as a list of Tree objects paired with a key
+        # denoting the (i,j) of the treelist_array grid referencing the FIA
+        # plot sequence number from which the samples are drawn
         samples = {}
 
-        xy = []
-
+        # loop over each column and row in the treelist_array
         for i in range(self.h):
             for j in range(self.w):
+
+                # initialize the Tree object list at the grid index
+                samples[(i,j)] = []
+
+                # if the queried fia idx equals the grid nodata value then
+                # skip what's below and return to top of loop
                 fia_idx = self.treelist_array[i,j]
                 if fia_idx == self.treelist_nodata:
                     continue
+
+                # get the plot sequence number and query the FIA database
                 plt_cn = FIA_IDX[str(fia_idx)]
-                #if plt_cn in sampled_cns:
-                    #continue
-                #sampled_cns.append(plt_cn)
-                samples[plt_cn] = []
                 plot = qfia.query(plt_cn)
 
+                # loop down to the trees in subplots
                 for subplot in plot:
                     for tree in subplot:
 
+                        # The tree must have a numeric value for diameter and
+                        # a status code of 1 indicating a living tree
                         if (tree.dia) and (tree.statuscd == 1):
-                            if tree.dia >= 5.0:
-                                n = self.n_subplot_trees()
-                            else:
-                                n = self.n_microplot_trees()
 
+                            # Fixed radius plot cutoffs; different expansion
+                            # factors apply
+                            if tree.dia >= 5.0:
+                                n = self._n_subplot_trees()
+                            else:
+                                n = self._n_microplot_trees()
+
+                            # Extract measurements and add to list
+                            # n is the number of tree instances after expansion
                             for k in range(n):
                                 spcd = str(int(tree.spcd))
                                 dia = tree.dia*2.54
                                 ht = tree.actualht*0.3048
                                 cr = tree.cr
-                                theta = np.random.random()*2*np.pi
-                                d = np.random.random()*30
-                                x = np.cos(theta)*d+15
-                                y = np.sin(theta)*d+15
-                                x += j*30
-                                y += i*30
-                                xy.append([x,y,dia/100])
-                                samples[plt_cn].append(Tree(spcd, dia, ht, cr))
+                                samples[(i,j)].append(Tree(spcd, dia, ht, cr))
 
-        return xy
+        return samples
 
-    def n_subplot_trees(self):
+    def _n_subplot_trees(self):
 
         r = np.random.random()
         if r < 0.338:
@@ -290,7 +300,7 @@ class Forest:
 
         return n
 
-    def n_microplot_trees(self):
+    def _n_microplot_trees(self):
 
         r = np.random.random()
         if r < 0.672:
@@ -300,27 +310,30 @@ class Forest:
 
         return n
 
+    def distribute_samples(self):
+
+        for i in range(1000):
+            x = np.random.uniform(0, 600)
+            y = np.random.uniform(0, 300)
+            z = np.random.uniform(0, 100)
+            print(x,y,z)
+            self.domain.insert([x,y,z], 1)
+
+        print(self.domain.dim)
+        print(self.domain.res)
+
+
 
 import matplotlib.pyplot as plt
 import matplotlib
+
 if __name__ == '__main__':
 
-    for i in range(100):
-        tree1 = Tree('202', 50.0, 30, 0.5)
-        print(tree1.volume)
-        print(tree1.id)
 
-    forest = Forest(500,1200,30,30)
-    xy = forest.sample_plots()
+    forest = Forest(500,1200,10,10)
+    samples = forest.sample_plots()
+    print(samples[0,1])
 
-    patches = [plt.Circle((i[0],i[1]),i[2]) for i in xy]
-
-    fig, ax = plt.subplots()
-
-    coll = matplotlib.collections.PatchCollection(patches, facecolors='black')
-    #ax.imshow(forest.treelist_array, alpha=0.2)
-    ax.add_collection(coll)
-    ax.set_aspect('equal')
-    ax.set_ylim(0,900)
-    ax.set_xlim(0,900)
-    plt.show()
+    forest.distribute_samples()
+    viewer = domain.View(forest.domain)
+    viewer.show3d()

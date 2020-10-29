@@ -40,7 +40,7 @@ class ParameterArray:
 
 	def _cast(self, pos):
 
-		x, y, z = pos
+		x, y, z = [float(i) for i in pos]
 
 		x = int(x/self.res_x)
 		y = int(y/self.res_y)
@@ -59,11 +59,27 @@ class ParameterArray:
 		else:
 			return 0
 
+	def in_bounds(self, x, y, z):
+
+		rtn = True
+
+		if not ((x > 0) and (x < self.n_cells_x)):
+			rtn = False
+		if not ((y > 0) and (y < self.n_cells_y)):
+			rtn = False
+		if not ((z > 0) and (z < self.n_cells_z)):
+			rtn = False
+
+		return rtn
+
 	def insert(self, pos, value):
 
 		x, y, z = self._cast(pos)
 
-		self.domain[y, x, z] = value
+		if self.in_bounds(x, y, z):
+			self.domain[y, x, z] = value
+		else:
+			print(f"x: {x}, y: {y}, z: {z} out of bounds")
 
 class View:
 
