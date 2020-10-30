@@ -137,7 +137,11 @@ class Tree:
         self.init_beta_canopy()
         self.volume = self.get_volume()
 
-        self.bulk_density = self.weight.foliage/(self.volume*self.cd)
+        # currently multiplying foliage weight by crown ratio to resolve
+        # high bulk densities when crown length is small
+        self.bulk_density = (self.cr*self.weight.foliage)/(self.volume*self.cd)
+
+        self.n_cells = int(self.cd*self.volume + 0.5)
 
     def get_biomass(self):
         """
@@ -236,7 +240,7 @@ class Forest:
         self.h = h
 
         dim = [w*30, h*30, 100]
-        res = [2, 2, 1]
+        res = [1, 1, 1]
 
         self.domain = domain.ParameterArray(dim, res)
 
@@ -249,6 +253,7 @@ class Forest:
 
         # loop over each column and row in the treelist_array
         for i in range(self.h):
+            print(i)
             for j in range(self.w):
 
                 # initialize the Tree object list at the grid index
@@ -285,10 +290,10 @@ class Forest:
                                 spcd = str(int(tree.spcd))
                                 dia = tree.dia*2.54
                                 ht = tree.actualht*0.3048
-                                cr = tree.cr
-                                samples[(i,j)].append(Tree(spcd, dia, ht, cr))
+                                cr = tree.cr/100
+                                samples[(i,j)].append(Tree(spcd, dia, ht, cr, cd=0.5))
 
-        return samples
+        self.samples = samples
 
     def _n_subplot_trees(self):
 
@@ -312,16 +317,44 @@ class Forest:
 
     def distribute_samples(self):
 
-        for i in range(1000):
-            x = np.random.uniform(0, 600)
-            y = np.random.uniform(0, 300)
-            z = np.random.uniform(0, 100)
-            print(x,y,z)
-            self.domain.insert([x,y,z], 1)
+        for i in range(self.h):
+            print(i)
+            for j in range(self.w):
+                for tree in self.samples[(i,j)]:
 
-        print(self.domain.dim)
-        print(self.domain.res)
+                    placed = False
+                    while not placed:
+                        self.domain.reset_track()
+                        theta = np.random.random()*2*np.pi
+                        dist = np.random.random()*30
+                        x = np.cos(theta)*dist + 15
+                        y = np.sin(theta)*dist + 15
+                        x += i*30
+                        y += j*30
+                        fact = self.domain.res_x*self.domain.res_y*self.domain.res_z
+                        n = int(tree.cd*(tree.volume/fact) + 0.5)
 
+                        attemps = 0
+                        while n > 0:
+                            z = np.random.beta(3,1.5)
+                            r = np.random.beta(2.5,1.5)
+                            rad = tree.get_beta_radius(z)*r*tree.ch
+                            c_theta = np.random.random()*2*np.pi
+
+                            c_x = x + np.cos(c_theta)*rad
+                            c_y = y + np.sin(c_theta)*rad
+                            c_z = tree.cbh + z*tree.ch
+
+                            if self.domain.insert([c_x, c_y, c_z], int(tree.sp)):
+                                n -= 1
+                                attemps = 0
+                            else:
+                                attemps += 1
+
+                            if attemps > 20:
+                                self.domain.rewind_insert_track()
+                                break
+                        placed = True
 
 
 import matplotlib.pyplot as plt
@@ -330,10 +363,14 @@ import matplotlib
 if __name__ == '__main__':
 
 
-    forest = Forest(500,1200,10,10)
-    samples = forest.sample_plots()
-    print(samples[0,1])
+    forest = Forest(1500,1500,30,30)
 
+    print('sampling')
+    forest.sample_plots()
+
+    print('placing trees')
     forest.distribute_samples()
+
+    print('plotting')
     viewer = domain.View(forest.domain)
     viewer.show3d()

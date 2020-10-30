@@ -38,6 +38,8 @@ class ParameterArray:
 		self.domain = np.zeros((self.n_cells_y, self.n_cells_x,
 			self.n_cells_z), np.float32)
 
+		self.track = []
+
 	def _cast(self, pos):
 
 		x, y, z = [float(i) for i in pos]
@@ -48,10 +50,9 @@ class ParameterArray:
 
 		return [x, y, z]
 
-	def is_empty(self, pos, nodata=0):
+	def _is_empty(self, pos, nodata=0):
 
-		x, y, z = self._cast(pos)
-
+		x,y,z = pos
 		val = self.domain[y, x, z]
 
 		if val == nodata:
@@ -76,10 +77,26 @@ class ParameterArray:
 
 		x, y, z = self._cast(pos)
 
+
+
 		if self.in_bounds(x, y, z):
-			self.domain[y, x, z] = value
+			if self._is_empty([x,y,z]):
+				self.domain[y, x, z] = value
+				self.track.append(pos)
+				return 1
+			else:
+				return 0
 		else:
-			print(f"x: {x}, y: {y}, z: {z} out of bounds")
+			return 2
+
+	def reset_track(self):
+
+		self.track = []
+
+	def rewind_insert_track(self):
+
+		for pos in self.track:
+			self.insert(pos, 0)
 
 class View:
 
@@ -110,7 +127,7 @@ class View:
 		grid.cell_arrays['values'] = data.flatten(order='F')
 
 		grid = grid.threshold(0)
-		grid.plot()
+		grid.plot(cmap=plt.cm.tab20b)
 
 if __name__ == '__main__':
 
