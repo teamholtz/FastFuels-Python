@@ -77,8 +77,6 @@ class ParameterArray:
 
 		x, y, z = self._cast(pos)
 
-
-
 		if self.in_bounds(x, y, z):
 			if self._is_empty([x,y,z]):
 				self.domain[y, x, z] = value
@@ -97,6 +95,11 @@ class ParameterArray:
 
 		for pos in self.track:
 			self.insert(pos, 0)
+
+	def trace_track(self, track, val):
+
+		for pos in track:
+			self.insert(pos, val)
 
 class View:
 
@@ -127,7 +130,11 @@ class View:
 		grid.cell_arrays['values'] = data.flatten(order='F')
 
 		grid = grid.threshold(0)
-		grid.plot(cmap=plt.cm.tab20b)
+
+		return grid
+
+		#pv.set_plot_theme('night')
+		#grid.plot(cmap=plt.cm.tab20b)
 
 if __name__ == '__main__':
 

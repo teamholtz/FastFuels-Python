@@ -11,7 +11,10 @@ import math
 
 # external
 #import cupy as cp
+import cv2
+import scipy.ndimage as ndimage
 import numpy as np
+import pyvista as pv
 import gdal
 sys.path.append('../../../qFIA/src/')
 import qfia
@@ -101,6 +104,66 @@ BETA_CANOPY_PARAMS = {
     '10': [1.75, 1.6, 0.1] # juniper/oak/mesquite
 }
 
+# fuel parameters for the Scott and Burgan 40
+# [name, loading (tons/ac), SAV (1/ft), ext. MC (percent), bed depth (ft)]
+SB40_PARAMS = {
+	91:  ['NB1', 0.00, 0.0000, 0.00, 0.00],
+	92:  ['NB2', 0.00, 0.0000, 0.00, 0.00],
+	93:  ['NB3', 0.00, 0.0000, 0.00, 0.00],
+	98:  ['NB8', 0.00, 0.0000, 0.00, 0.00],
+	99:  ['NB9', 0.00, 0.0000, 0.00, 0.00],
+	101: ['GR1', 0.40, 2054.0, 15.0, 0.4],
+	102: ['GR2', 1.10, 1820.0, 15.0, 1.0],
+	103: ['GR3', 1.60, 1290.0, 30.0, 2.0],
+	104: ['GR4', 2.15, 1826.0, 15.0, 2.0],
+	105: ['GR5', 2.90, 1631.0, 40.0, 1.5],
+	106: ['GR6', 3.50, 2006.0, 40.0, 1.5],
+	107: ['GR7', 6.40, 1834.0, 15.0, 3.0],
+	108: ['GR8', 7.80, 1302.0, 30.0, 4.0],
+	109: ['GR9', 10.0, 1612.0, 40.0, 5.0],
+	121: ['GS1', 1.35, 1832.0, 15.0, 0.9],
+	122: ['GS2', 2.10, 1827.0, 15.0, 1.5],
+	123: ['GS3', 3.00, 1614.0, 40.0, 1.8],
+	124: ['GS4', 12.4, 1674.0, 40.0, 2.1],
+	141: ['SH1', 1.70, 1674.0, 15.0, 1.0],
+	142: ['SH2', 5.20, 1672.0, 15.0, 1.0],
+	143: ['SH3', 6.65, 1371.0, 40.0, 2.4],
+	144: ['SH4', 3.40, 1682.0, 30.0, 3.0],
+	145: ['SH5', 6.50, 1252.0, 15.0, 6.0],
+	146: ['SH6', 4.30, 1144.0, 30.0, 2.0],
+	147: ['SH7', 6.90, 1233.0, 15.0, 6.0],
+	148: ['SH8', 6.40, 1386.0, 40.0, 3.0],
+	149: ['SH9', 13.1, 1378.0, 40.0, 4.4],
+	161: ['TU1', 1.30, 1606.0, 20.0, 0.6],
+	162: ['TU2', 1.15, 1767.0, 30.0, 1.0],
+	163: ['TU3', 2.85, 1611.0, 30.0, 1.3],
+	164: ['TU4', 6.50, 2216.0, 12.0, 0.5],
+	165: ['TU5', 7.00, 1224.0, 25.0, 1.0],
+	181: ['TL1', 1.00, 1716.0, 30.0, 0.2],
+	182: ['TL2', 1.40, 1806.0, 25.0, 0.2],
+	183: ['TL3', 0.50, 1532.0, 20.0, 0.3],
+	184: ['TL4', 0.50, 1568.0, 25.0, 0.4],
+	185: ['TL5', 1.15, 1713.0, 25.0, 0.6],
+	186: ['TL6', 2.40, 1936.0, 25.0, 0.3],
+	187: ['TL7', 0.30, 1229.0, 25.0, 0.4],
+	188: ['TL8', 5.80, 1770.0, 35.0, 0.3],
+	189: ['TL9', 6.65, 1733.0, 35.0, 0.6],
+	201: ['SB1', 1.50, 1653.0, 25.0, 1.0],
+	202: ['SB2', 4.50, 1884.0, 25.0, 1.0],
+	203: ['SB3', 5.50, 1935.0, 25.0, 1.2],
+	204: ['SB4', 5.25, 1907.0, 25.0, 2.7],
+}
+
+# convert parameters to metric
+for key in SB40_PARAMS.keys():
+	load = SB40_PARAMS[key][1]
+	savs = SB40_PARAMS[key][2]
+	ht = SB40_PARAMS[key][4]
+	if load != 0:
+		SB40_PARAMS[key][1] = load*0.22417#(load*ht)*0.735468 # tons/ac-ft to kg/m^3
+		SB40_PARAMS[key][2] = (1.0/savs)*0.3048 # inverse feet to meters
+		SB40_PARAMS[key][4] = ht*0.3048 # feet to meters
+
 SPECIES_GROUP_COLORS = {
 
 }
@@ -109,9 +172,10 @@ SPECIES_GROUP_COLORS = {
 with open('../../data/fia_ids.txt', 'rb') as f:
     FIA_IDX = json.load(f)
 
-# load treelist layer
+# load treelist layer and surface fuel models
 FIA_TREELIST = gdal.Open('../../data/treelist.tif')
 SB40_FUELS = gdal.Open('../../data/sb40.tif')
+ELEV_30 = gdal.Open('../../data/elevation.tif')
 
 
 class Tree:
@@ -233,16 +297,35 @@ class Forest:
 
     def __init__(self, x, y, w, h):
 
-        self.treelist_nodata = FIA_TREELIST.GetRasterBand(1).GetNoDataValue()
-        self.treelist_array = FIA_TREELIST.ReadAsArray(x, y, w, h)
-
         self.w = w
         self.h = h
 
-        dim = [w*30, h*30, 100]
-        res = [1, 1, 1]
 
-        self.domain = domain.ParameterArray(dim, res)
+        self.res = [2,2,1]
+
+        self.treelist_nodata = FIA_TREELIST.GetRasterBand(1).GetNoDataValue()
+        self.surface_nodata = SB40_FUELS.GetRasterBand(1).GetNoDataValue()
+
+        self.treelist_array = FIA_TREELIST.ReadAsArray(x, y, w, h)
+        self.surface_array = SB40_FUELS.ReadAsArray(x, y, w, h)
+
+        dem_array = ELEV_30.ReadAsArray(x, y, w, h)
+        self.dem_array = self.interpolate(dem_array)
+
+        max_elev = np.max(self.dem_array)
+        self.dim = [w*30, h*30, 100]# + max_elev]
+
+        # init parameter arrays
+        self.tree_id = domain.ParameterArray(self.dim, self.res)
+        self.bulk_density = domain.ParameterArray(self.dim, self.res)
+        self.moisture = domain.ParameterArray(self.dim, self.res)
+        self.sav = domain.ParameterArray(self.dim, self.res)
+        self.fuel_depth = domain.ParameterArray(self.dim, self.res)
+
+    def interpolate(self, array):
+
+        return cv2.resize(array, (self.w*(30//self.res[0]),
+            self.h*(30//self.res[1])), cv2.INTER_LINEAR)
 
     def sample_plots(self):
 
@@ -291,7 +374,8 @@ class Forest:
                                 dia = tree.dia*2.54
                                 ht = tree.actualht*0.3048
                                 cr = tree.cr/100
-                                samples[(i,j)].append(Tree(spcd, dia, ht, cr, cd=0.5))
+                                samples[(i,j)].append(Tree(spcd, dia, ht, cr,
+                                    cd=0.5))
 
         self.samples = samples
 
@@ -315,7 +399,7 @@ class Forest:
 
         return n
 
-    def distribute_samples(self):
+    def distribute_canopy(self):
 
         for i in range(self.h):
             print(i)
@@ -324,14 +408,17 @@ class Forest:
 
                     placed = False
                     while not placed:
-                        self.domain.reset_track()
+                        self.tree_id.reset_track()
                         theta = np.random.random()*2*np.pi
                         dist = np.random.random()*30
                         x = np.cos(theta)*dist + 15
                         y = np.sin(theta)*dist + 15
                         x += i*30
                         y += j*30
-                        fact = self.domain.res_x*self.domain.res_y*self.domain.res_z
+                        if not ((x > 0) and (x < self.w*30) and (y > 0) and (y < self.h*30)):
+                            continue
+                        z_m = self.dem_array[int(y/2), int(x/2)]
+                        fact = self.res[0]*self.res[1]*self.res[2]
                         n = int(tree.cd*(tree.volume/fact) + 0.5)
 
                         attemps = 0
@@ -343,34 +430,105 @@ class Forest:
 
                             c_x = x + np.cos(c_theta)*rad
                             c_y = y + np.sin(c_theta)*rad
-                            c_z = tree.cbh + z*tree.ch
+                            c_z = tree.cbh + z*tree.ch #+ z_m
 
-                            if self.domain.insert([c_x, c_y, c_z], int(tree.sp)):
+                            if self.tree_id.insert([c_x, c_y, c_z], int(tree.id)):
                                 n -= 1
                                 attemps = 0
                             else:
                                 attemps += 1
 
                             if attemps > 20:
-                                self.domain.rewind_insert_track()
+                                self.tree_id.rewind_insert_track()
                                 break
                         placed = True
 
+                    track = self.tree_id.track
+                    self.bulk_density.trace_track(track, tree.bulk_density)
+                    self.sav.trace_track(track, 1/2000.0*0.348)
+                    self.moisture.trace_track(track, 0.68)
+
+    def distribute_surface(self):
+
+        fact = 30 // self.res[0]
+
+        bd_array = np.zeros((self.h*fact, self.w*fact))
+        depth_array = np.zeros_like(bd_array)
+        sav_array = np.zeros_like(bd_array)
+        moisture_array = np.zeros_like(bd_array)
+
+        for i in range(self.h*fact):
+            print(i)
+            for j in range(self.w*fact):
+                theta = np.random.random()*2*np.pi
+                radius = np.random.random()*6
+                x = np.cos(theta)*radius
+                y = np.sin(theta)*radius
+                int_x = j//fact + int(x + 0.5)
+                int_y = i//fact + int(y + 0.5)
+                while (int_x < 0) or (int_x > self.w-1) or (int_y < 0) or (int_y > self.h-1):
+                    theta = np.random.random()*2*np.pi
+                    radius = np.random.random()*6
+                    x = np.cos(theta)*radius
+                    y = np.sin(theta)*radius
+                    int_x = j//fact + int(x + 0.5)
+                    int_y = i//fact + int(y + 0.5)
+                bd_array[i,j] = SB40_PARAMS[self.surface_array[int_y, int_x]][1]
+                depth_array[i,j] = SB40_PARAMS[self.surface_array[int_y, int_x]][4]
+                sav_array[i,j] = SB40_PARAMS[self.surface_array[int_y, int_x]][2]
+                moisture_array[i,j] = SB40_PARAMS[self.surface_array[int_y, int_x]][3]*0.25/100
+
+        self.bulk_density.domain[:,:,0] = ndimage.gaussian_filter(bd_array, sigma=5)
+        self.fuel_depth.domain[:,:,0] = ndimage.gaussian_filter(depth_array, sigma=5)
+        self.sav.domain[:,:,0] = ndimage.gaussian_filter(sav_array, sigma=5)
+        self.moisture.domain[:,:,0] = ndimage.gaussian_filter(moisture_array, sigma=5)
 
 import matplotlib.pyplot as plt
 import matplotlib
 
 if __name__ == '__main__':
 
+    """
+    ele = elevation.DEM(2200, 2200, 30, 30)
+    dem = ele.interpolate()
+    print(dem)
+    plt.imshow(dem)
+    plt.show()
+    x = np.arange(0, dem.shape[1], 1.0)
+    y = np.arange(0, dem.shape[0], 1.0)
+    x,y = np.meshgrid(x,y)
+    dem = dem - np.min(dem)
+    terrain = pv.StructuredGrid(y,x,dem)
+    """
 
-    forest = Forest(1500,1500,30,30)
+    forest = Forest(1650, 1000, 15, 15)
 
-    print('sampling')
+    print('sampling FIA plots')
     forest.sample_plots()
 
     print('placing trees')
-    forest.distribute_samples()
+    forest.distribute_canopy()
+
+    print('surface fuels')
+    forest.distribute_surface()
 
     print('plotting')
-    viewer = domain.View(forest.domain)
-    viewer.show3d()
+    p = pv.Plotter()
+    viewer = domain.View(forest.bulk_density)
+    grid = viewer.show3d()
+    p.add_mesh(grid)
+    #p.add_mesh(terrain, color='#bfa300')
+    p.show()
+
+    from scipy.io import FortranFile
+    def save(data, filename):
+        data = data.astype(np.float32)
+        data = data.T
+        f = FortranFile(filename, 'w', 'uint32')
+        f.write_record(data)
+
+    save(forest.bulk_density.domain, '../../output/bulk_density.dat')
+    save(forest.moisture.domain, '../../output/moisture.dat')
+    save(forest.sav.domain, '../../output/sav.dat')
+    save(forest.fuel_depth.domain, '../../output/depth.dat')
+    save(forest.dem_array, '../../output/topo.dat')
