@@ -21,6 +21,7 @@ import qfia
 
 # package-level
 import domain
+import projections
 
 __author__     = "Lucas Wells"
 __copyright__  = "Copyright 2020, Holtz Forestry LLC"
@@ -177,6 +178,10 @@ FIA_TREELIST = gdal.Open('../../data/treelist.tif')
 SB40_FUELS = gdal.Open('../../data/sb40.tif')
 ELEV_30 = gdal.Open('../../data/elevation.tif')
 
+geo_matrix = SB40_FUELS.GetGeoTransform()
+ULX, ULY = geo_matrix[0], geo_matrix[3]
+
+
 
 class Tree:
 
@@ -297,26 +302,31 @@ class Forest:
 
     def __init__(self, x, y, w, h):
 
-        self.w = w
-        self.h = h
+        proj = projections.AlbersEqualArea()
+        x,y = proj.project(x, y)
+        x = int(np.abs(x - ULX)/30.0 + 0.5)
+        y = int(np.abs(y - ULY)/30.0 + 0.5)
 
+        self.w = int(w/30.0)
+        self.h = int(h/30.0)
 
         self.res = [2,2,1]
 
         self.treelist_nodata = FIA_TREELIST.GetRasterBand(1).GetNoDataValue()
         self.surface_nodata = SB40_FUELS.GetRasterBand(1).GetNoDataValue()
 
-        self.treelist_array = FIA_TREELIST.ReadAsArray(x, y, w, h)
-        self.surface_array = SB40_FUELS.ReadAsArray(x, y, w, h)
+        self.treelist_array = FIA_TREELIST.ReadAsArray(x, y, self.w, self.h)
+        self.surface_array = SB40_FUELS.ReadAsArray(x, y, self.w, self.h)
 
-        dem_array = ELEV_30.ReadAsArray(x, y, w, h)
+        dem_array = ELEV_30.ReadAsArray(x, y, self.w, self.h)
         self.dem_array = self.interpolate(dem_array)
 
         max_elev = np.max(self.dem_array)
-        self.dim = [w*30, h*30, 100]# + max_elev]
+        self.dim = [self.w*30, self.h*30, 100]# + max_elev]
 
         # init parameter arrays
         self.tree_id = domain.ParameterArray(self.dim, self.res)
+        self.tree_sp = domain.ParameterArray(self.dim, self.res)
         self.bulk_density = domain.ParameterArray(self.dim, self.res)
         self.moisture = domain.ParameterArray(self.dim, self.res)
         self.sav = domain.ParameterArray(self.dim, self.res)
@@ -444,6 +454,7 @@ class Forest:
                         placed = True
 
                     track = self.tree_id.track
+                    self.tree_sp.trace_track(track, tree.sp)
                     self.bulk_density.trace_track(track, tree.bulk_density)
                     self.sav.trace_track(track, 1/2000.0*0.348)
                     self.moisture.trace_track(track, 0.68)
@@ -501,7 +512,7 @@ if __name__ == '__main__':
     terrain = pv.StructuredGrid(y,x,dem)
     """
 
-    forest = Forest(1650, 1000, 15, 15)
+    forest = Forest(38.98531294306404, -120.64584148255688, 1000, 1000)
 
     print('sampling FIA plots')
     forest.sample_plots()
@@ -513,12 +524,14 @@ if __name__ == '__main__':
     forest.distribute_surface()
 
     print('plotting')
+    pv.set_plot_theme('night')
     p = pv.Plotter()
-    viewer = domain.View(forest.bulk_density)
+    viewer = domain.View(forest.moisture)
     grid = viewer.show3d()
-    p.add_mesh(grid)
+    grid.plot()
+    #p.add_mesh(grid)
     #p.add_mesh(terrain, color='#bfa300')
-    p.show()
+    #p.show(show_axes=True)
 
     from scipy.io import FortranFile
     def save(data, filename):
