@@ -1,10 +1,26 @@
 
+"""
+Geographic projections
+"""
+
+# build-in
 import math
-import numpy as np
+
+__author__     = "Lucas Wells"
+__copyright__  = "Copyright 2020, Holtz Forestry LLC"
+__version__    = "0.0.1"
+__maintainer__ = "Lucas Wells"
+__email__      = "lucas@holtzforestry.com"
+__status__     = "Prototype"
+
 
 class AlbersEqualArea:
+    """
+    Handles ellipsoid Albers Equal Area Conic projections forward and back
+    """
 
     def __init__(self):
+        """ constructor """
 
         # geographic constants
         self.a = 6378137.0
@@ -39,6 +55,9 @@ class AlbersEqualArea:
             phi))/(1 + self.e*math.sin(phi))))
 
     def project(self, lat, lon):
+        """
+        Forward projection
+        """
 
         lat = math.radians(lat)
         lon = math.radians(lon)
@@ -63,4 +82,3 @@ if __name__ == '__main__':
     test = AlbersEqualArea()
     x1, y1 = test.project(lat1, lon1)
     x2, y2 = test.project(lat2, lon2)
-    print((np.abs(x2 - x1)*np.abs(y2 - y1))/1000000)

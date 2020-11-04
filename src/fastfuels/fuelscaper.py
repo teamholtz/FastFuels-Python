@@ -1,6 +1,6 @@
 
 """
-Generator for canopy fuels
+Fuelscape Generator
 """
 
 # built-in
@@ -30,26 +30,6 @@ __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"
 
-
-""" Temporary: generates species reference json file
-ref_sp = {}
-data = np.genfromtxt('../../data/ref_sp.csv', delimiter=',')
-for i in range(data.shape[0]):
-    code = int(data[i,0])
-    group = -1
-    if not math.isnan(data[i,1]):
-        group = int(data[i,1])
-    sapadj = -1
-    if not math.isnan(data[i,2]):
-        sapadj = data[i,2]
-    sorh = -1
-    if not math.isnan(data[i,3]):
-        sorh = int(data[i,3])
-    ref_sp[code] = [group, sapadj, sorh]
-
-with open('../../data/ref_sp.txt', 'w') as f:
-    json.dump(ref_sp, f)
-"""
 
 # Globals
 
@@ -182,7 +162,6 @@ geo_matrix = SB40_FUELS.GetGeoTransform()
 ULX, ULY = geo_matrix[0], geo_matrix[3]
 
 
-
 class Tree:
 
     _counter = 0
@@ -267,8 +246,10 @@ class Tree:
 
     def init_beta_canopy(self):
 
+        # get beta distribution parameters
         self.beta_a, self.beta_b, self.beta_c = BETA_CANOPY_PARAMS[self.sp_grp]
 
+        # store the normalization constant
         self.beta_norm = np.sqrt(
             2*np.pi)*((self.beta_a**(self.beta_a-0.5)*self.beta_b**(
                 self.beta_b-0.5))/((self.beta_a+self.beta_b)**(
@@ -276,14 +257,17 @@ class Tree:
 
     def get_beta_radius(self, z):
 
+        # grabs the unscaled radius of the beta canopy at unscaled height `z`
         return self.beta_c*(((z**(self.beta_a-1))*((1-z)**(
             self.beta_b-1))))/self.beta_norm
 
     def get_volume(self):
         """
-        Integrate beta canopy to calculate volume
+        Integrate beta canopy to calculate volume. Might be an analytical
+        solution to this... for now we'll carry on numerically
         """
 
+        # integration steps
         z = np.linspace(0, 1, 100)
 
         dz = self.ch/100.0
@@ -300,7 +284,12 @@ class Tree:
 
 class Forest:
 
-    def __init__(self, x, y, w, h):
+    def __init__(self, x, y, w, h, res=[2,2,1]):
+        """
+        Arguments x and y are lat and lon, w and h are width and height of
+        domain in meters. Resolution is also in meters. Will probably change
+        w and h to a second lat and lon coordinate to define a bounding box.
+        """
 
         proj = projections.AlbersEqualArea()
         x,y = proj.project(x, y)
@@ -310,7 +299,7 @@ class Forest:
         self.w = int(w/30.0)
         self.h = int(h/30.0)
 
-        self.res = [2,2,1]
+        self.res = res
 
         self.treelist_nodata = FIA_TREELIST.GetRasterBand(1).GetNoDataValue()
         self.surface_nodata = SB40_FUELS.GetRasterBand(1).GetNoDataValue()
@@ -334,8 +323,10 @@ class Forest:
 
     def interpolate(self, array):
 
-        return cv2.resize(array, (self.w*(30//self.res[0]),
-            self.h*(30//self.res[1])), cv2.INTER_LINEAR)
+        # TODO: program linear (or bicubic) interpolation and remove OpenCV
+        # dependency
+        return cv2.resize(array, (self.w*int(30/self.res[0]),
+            self.h*int(30/self.res[1])), cv2.INTER_LINEAR)
 
     def sample_plots(self):
 
@@ -411,57 +402,97 @@ class Forest:
 
     def distribute_canopy(self):
 
+        # loop over each cell in treelist array
         for i in range(self.h):
             print(i)
             for j in range(self.w):
+
+                # loop over each tree assigned to cell (i,j)
                 for tree in self.samples[(i,j)]:
+
+                    dist = 30 # radius of circle bounding tree position
 
                     placed = False
                     while not placed:
+
+                        # clears the insersion track (makes sense further down)
                         self.tree_id.reset_track()
+
+                        # draw random polar coordinates within bounding circle
                         theta = np.random.random()*2*np.pi
-                        dist = np.random.random()*30
-                        x = np.cos(theta)*dist + 15
-                        y = np.sin(theta)*dist + 15
+                        dist = np.random.random()*dist
+                        x = np.cos(theta)*dist + 15 # add 15 here to translate to center of cell
+                        y = np.sin(theta)*dist + 15 # same here
+
+                        # Now translate to the current cell
                         x += i*30
                         y += j*30
+
+                        # check if in bounds of domain. If not we don't try to place the tree
+                        # elsewhere, just move on.
                         if not ((x > 0) and (x < self.w*30) and (y > 0) and (y < self.h*30)):
                             continue
+
+                        # extract height from dem; don't need this right now
                         z_m = self.dem_array[int(y/2), int(x/2)]
+
+                        # this is the numerator for computing the number of
+                        # 1m^3 cells in the selected resolution
                         fact = self.res[0]*self.res[1]*self.res[2]
+
+                        # number of fuel cells to distribute
                         n = int(tree.cd*(tree.volume/fact) + 0.5)
 
-                        attemps = 0
-                        while n > 0:
+                        attemps = 0 # keep track of the placement attemps
+                        while n > 0: # loop until all fuel cell are placed
+
+                            # sampled the beta canopy in height, direction and radius
                             z = np.random.beta(3,1.5)
                             r = np.random.beta(2.5,1.5)
                             rad = tree.get_beta_radius(z)*r*tree.ch
                             c_theta = np.random.random()*2*np.pi
 
+                            # translate to the sampled tree position
                             c_x = x + np.cos(c_theta)*rad
                             c_y = y + np.sin(c_theta)*rad
                             c_z = tree.cbh + z*tree.ch #+ z_m
 
+                            # attemp to place fuel cell in domain
                             if self.tree_id.insert([c_x, c_y, c_z], int(tree.id)):
                                 n -= 1
                                 attemps = 0
                             else:
                                 attemps += 1
 
+                            # give up after 20 attemps and draw new location
                             if attemps > 20:
                                 self.tree_id.rewind_insert_track()
                                 break
-                        placed = True
 
+
+                        # if all fuel cells were placed then exit while loop and
+                        # go to next tree
+                        if n == 0:
+                            placed = True
+                        else:
+                            # increase the radius of bounding circle to increase
+                            # chance of placing all fuel cells
+                            dist += 10
+
+                    # trace the insersion track to assign the other params
                     track = self.tree_id.track
                     self.tree_sp.trace_track(track, tree.sp)
                     self.bulk_density.trace_track(track, tree.bulk_density)
                     self.sav.trace_track(track, 1/2000.0*0.348)
                     self.moisture.trace_track(track, 0.68)
 
-    def distribute_surface(self):
 
-        fact = 30 // self.res[0]
+    def distribute_surface(self):
+        """
+        clean this up!
+        """
+
+        fact = int(30/self.res[0])
 
         bd_array = np.zeros((self.h*fact, self.w*fact))
         depth_array = np.zeros_like(bd_array)
@@ -512,7 +543,7 @@ if __name__ == '__main__':
     terrain = pv.StructuredGrid(y,x,dem)
     """
 
-    forest = Forest(38.98531294306404, -120.64584148255688, 1000, 1000)
+    forest = Forest(38.98531294306404, -120.64584148255688, 900, 900, res=[2,2,1])
 
     print('sampling FIA plots')
     forest.sample_plots()
@@ -526,9 +557,9 @@ if __name__ == '__main__':
     print('plotting')
     pv.set_plot_theme('night')
     p = pv.Plotter()
-    viewer = domain.View(forest.moisture)
+    viewer = domain.View(forest.tree_sp)
     grid = viewer.show3d()
-    grid.plot()
+    grid.plot(cmap=plt.cm.tab20)
     #p.add_mesh(grid)
     #p.add_mesh(terrain, color='#bfa300')
     #p.show(show_axes=True)
