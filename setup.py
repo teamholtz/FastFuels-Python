@@ -1,7 +1,7 @@
 from distutils.core import setup
 
 setup(
-  name = 'FastFuels',
+  name = 'fastfuels',
   packages = ['fastfuels'],
   version = '0.1',
   license='GNU GPLv3',
