@@ -2,6 +2,8 @@
 
 3D fuelscapes for the contiguous US
 
+![FastFuels Demo GIF](https://storage.googleapis.com/public-assests/fastfuels_900.gif)
+
 ## Quickstart
 
 ### Connecting to a `.fio` resource
