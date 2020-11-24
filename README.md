@@ -10,7 +10,7 @@ A `.fio` resource is a directory-in-file object where important metadata and fue
 
 ```python
 >>> import fastfuels
->>> fio = fastfuels.open('../../FuelsIO/data/test/demo.fio')
+>>> fio = fastfuels.open('./demo.fio')
 ```
 
 Otherwise, you can connect to the cloud hosted demo.
@@ -35,7 +35,56 @@ And the projection system is stored in the `proj` attribute.
 
 ```python
 >>> print(fio.proj)
-PROJCS["USA_Contiguous_Albers_Equal_Area_Conic_USGS_version",GEOGCS["NAD83",DATUM["North_American_Datum_1983",SPHEROID["GRS 1980",6378137,298.2572221010042,AUTHORITY["EPSG
-","7019"]],AUTHORITY["EPSG","6269"]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AUTHORITY["EPSG","4269"]],PROJECTION["Albers_Conic_Equal_Area"],PARAMETER["standard_parallel_1",29.5],PARAMETER["standard_parallel_2",45.5],PARAMETER["latitude_of_center",23],PARAMETER["longitude_of_center",-96],PARAMETER["false_easting",0],PARAMETE
-R["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]]]
+```
+
+You can also view metadata for resolution, dimensions and units
+
+```python
+>>> print(fio.res)
+(1,1,1)
+>>> print(fio.units)
+'meters'
+>>> print(fio.dim)
+(6000, 6000, 100)
+>>> print(fio.dim_fmt)
+'x,y,z'
+```
+
+### Spatial queries
+
+You can perform spatial queries by supplying the coordinates of a bounding box in three different modes. Relative queries reference the datasets relative to the upper left-hand corner of the horizontal dimensions. The following will extract a 300x300 meter region of interest (ROI).
+
+```python
+roi = fio.query((2000, 2000), (2300, 2300), mode='relative')
+```
+
+Queries can also be performed using geographic or projected coordinates to define the bounding box.
+
+```python
+roi = fuels.query((-2098000, 2039000), (-2097700, 2038700), mode='projected')
+roi = fuels.query((-120.71, 38.93), (-120.705, 38.9275), mode='geographic')
+```
+
+### Viewing fuels in 3D
+
+Fuel parameter arrays can be viewed interactively in 3D. To see the available parameters run
+
+```python
+print(rio.get_properties())
+```
+
+Then specify one of the properties in the `view()` method on the `roi` object.
+
+```python
+roi.view('sav')
+```
+
+![FastFuels SAV](https://storage.googleapis.com/public-assests/fastfuels_sav.png)
+
+### Writing fire model input files
+
+With the `roi` object, you can write input files for various fire model (currently, only QUICFire is supported).
+
+```python
+roi.write('./outputs', model='quicfire')
 ```
