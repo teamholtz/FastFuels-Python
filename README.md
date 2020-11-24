@@ -2,7 +2,13 @@
 
 3D fuelscapes for the contiguous US
 
-![FastFuels Demo GIF](https://storage.googleapis.com/public-assests/fastfuels_900.gif)
+## Install
+
+You can install FastFuels through the Python Package Index.
+
+```
+pip3 install fastfuels
+```
 
 ## Quickstart
 
@@ -85,7 +91,7 @@ roi.view('sav')
 
 ### Writing fire model input files
 
-With the `roi` object, you can write input files for various fire model (currently, only QUICFire is supported).
+With the `roi` object, you can write input files for various fire models.
 
 ```python
 roi.write('./outputs', model='quicfire')
