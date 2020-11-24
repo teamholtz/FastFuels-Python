@@ -5,7 +5,7 @@ setup(
   packages = ['fastfuels'],
   version = '0.1',
   license='GNU GPLv3',
-  description = '3D fuelscapes for the contiguous US'
+  description = '3D fuelscapes for the contiguous US',
   author = 'Lucas Wells',
   author_email = 'lucas@holtzforestry.com',
   url = 'https://github.com/holtzforestry/FastFuels',
