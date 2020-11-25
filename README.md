@@ -7,7 +7,7 @@
 You can install FastFuels through the Python Package Index.
 
 ```
-pip3 install fastfuels
+pip install fastfuels
 ```
 
 ## Quickstart

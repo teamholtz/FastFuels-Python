@@ -1,11 +1,20 @@
-from distutils.core import setup
+import pathlib
+from setuptools import setup
+
+# The directory containing this file
+HERE = pathlib.Path(__file__).parent
+
+# The text of the README file
+README = (HERE / "README.md").read_text()
 
 setup(
   name = 'fastfuels',
   packages = ['fastfuels'],
-  version = '0.1',
+  version = '0.2.1',
   license='GNU GPLv3',
   description = '3D fuelscapes for the contiguous US',
+  long_description = README,
+  long_description_content_type="text/markdown",
   author = 'Lucas Wells',
   author_email = 'lucas@holtzforestry.com',
   url = 'https://github.com/holtzforestry/FastFuels',
