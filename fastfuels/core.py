@@ -502,7 +502,7 @@ class FuelsROI:
         self.viewer.add(property)
         self.viewer.show()
 
-    def write(self, path, model='quicfire'):
+    def write(self, path, model='quicfire', res_xyz=[1,1,1]):
         """
         Writes fuel arrays to a fire model. Currently only implements QUICFire
         """
@@ -510,15 +510,15 @@ class FuelsROI:
         if model == 'quicfire':
             print('writing QUICFire input files...')
             self.writer.write_to_quicfire(self.data_dict['bulk_density'],
-                path + '/' + 'rhof.dat')
+                path + '/' + 'rhof.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['sav'],
-                path + '/' + 'sav.dat')
+                path + '/' + 'sav.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['moisture'],
-                path + '/' + 'moisture.dat')
+                path + '/' + 'moisture.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['fuel_depth'],
-                path + '/' + 'fueldepth.dat')
+                path + '/' + 'fueldepth.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['elevation'],
-                path + '/' + 'elevation.dat')
+                path + '/' + 'elevation.dat', res_xyz)
             print('complete')
         elif model == 'wfds':
             print('wfds writer not implemented')
@@ -529,10 +529,30 @@ class FireModelWriter:
     Writes fuel arrays to disk as fire model input files
     """
 
-    def write_to_quicfire(self, data, fname):
+    def write_to_quicfire(self, data, fname, res_xyz):
         """
         Write fuel array as QF input file
         """
+
+        print(f'Writing data to {fname}...')
+        rx, ry, rz = res_xyz
+
+        if res_xyz == [1,1,1]:
+            pass
+        elif res_xyz == [2,2,1]:
+
+            if len(data.shape) == 3:
+                h,w,d = data.shape
+                # average pool subsampling
+                data = data.reshape((h//2, 2, w//2, 2, d)).mean(3).mean(1)
+            elif len(data.shape) == 2:
+                h,w = data.shape
+                data = data.reshape((h//2, 2, w//2, 2)).mean(3).mean(1)
+        else:
+            print(f'Resolution can be either [1,1,1] or [2,2,1], not {res_xyz}. ' +
+                'Defaulting to [1,1,1] resolution')
+
+        print(f'Output resolution is x: {rx}, y: {ry}, z: {rz}\n')
 
         data = data.astype(np.float32)
         data = data.T

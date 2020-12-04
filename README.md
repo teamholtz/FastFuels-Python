@@ -14,7 +14,7 @@ pip install fastfuels
 
 ### Connecting to a `.fio` resource
 
-A `.fio` resource is a directory-in-file object where important metadata and fuel arrays are stores. Start by importing the FastFuels module and open a `.fio` resource. If you have one locally, specify the path and file name.
+A `.fio` resource is a directory-in-file object where important metadata and fuel arrays are stored. Start by importing the FastFuels module and open a `.fio` resource. If you have one locally, specify the path and file name.
 
 ```python
 >>> import fastfuels
@@ -78,7 +78,7 @@ roi = fuels.query((-120.71, 38.93), (-120.705, 38.9275), mode='geographic')
 Fuel parameter arrays can be viewed interactively in 3D. To see the available parameters run
 
 ```python
-print(rio.get_properties())
+print(roi.get_properties())
 ```
 
 Then specify one of the properties in the `view()` method on the `roi` object.
@@ -91,8 +91,9 @@ roi.view('sav')
 
 ### Writing fire model input files
 
-With the `roi` object, you can write input files for various fire models.
+With the `roi` object, you can write input files for various fire models. Here,
+you may also decrease the resolution to save computation.
 
 ```python
-roi.write('./outputs', model='quicfire')
+roi.write('./outputs', model='quicfire', res_xyz=[2,2,1])
 ```
