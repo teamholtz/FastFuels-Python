@@ -10,7 +10,7 @@ README = (HERE / "README.md").read_text()
 setup(
   name = 'fastfuels',
   packages = ['fastfuels'],
-  version = '0.2.1',
+  version = '0.2.2',
   license='GNU GPLv3',
   description = '3D fuelscapes for the contiguous US',
   long_description = README,
@@ -18,7 +18,7 @@ setup(
   author = 'Lucas Wells',
   author_email = 'lucas@holtzforestry.com',
   url = 'https://github.com/holtzforestry/FastFuels',
-  download_url = 'https://github.com/holtzforestry/FastFuels/archive/v0.1-alpha.tar.gz',
+  download_url = 'https://github.com/holtzforestry/FastFuels/archive/v0.2.2-alpha.tar.gz',
   keywords = ['fire model', 'fuelscape', 'wildfire'],
   install_requires=[
           'colorcet',
