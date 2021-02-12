@@ -5,7 +5,7 @@ perform spatial queries, view fuels data in 3D and export to QuicFire.
 
 __author__     = "Holtz Forestry LLC"
 __date__       = "16 November 2020"
-__version__    = "0.3.2"
+__version__    = "0.4.0"
 __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"
@@ -439,10 +439,10 @@ class FuelsIO:
 
         x1, y1 = self.albers.forward(lat, lon)
         x1 -= radius
-        y1 -= radius
+        y1 += radius
 
         x2 = x1 + radius*2
-        y2 = y1 + radius*2
+        y2 = y1 - radius*2
 
         return self.query_projected((x1, y1), (x2, y2))
 
