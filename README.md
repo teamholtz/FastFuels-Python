@@ -49,17 +49,13 @@ You can also view metadata for resolution and units
 
 ### Spatial queries
 
-You can perform spatial queries by supplying the coordinates of a bounding box in three different modes. Relative queries reference the datasets relative to the upper left-hand corner of the horizontal dimensions. The following will extract a 300x300 meter region of interest (ROI).
+You can perform spatial queries by specifying geographic coordinates in decimal degrees
+and a radius in meters. The radius parameter defines the size of the bounding square in which
+fuels are queried.
 
 ```python
-roi = fio.query((2000, 2000), (2300, 2300), mode='relative')
-```
-
-Queries can also be performed using geographic or projected coordinates to define the bounding box.
-
-```python
-roi = fuels.query((-2098000, 2039000), (-2097700, 2038700), mode='projected')
-roi = fuels.query((-120.71, 38.93), (-120.705, 38.9275), mode='geographic')
+# this command will return a square kilometer of fuels (radius=500 meters)
+roi = fio.query(-122.191, 41.208, 500)
 ```
 
 ### Viewing fuels in 3D

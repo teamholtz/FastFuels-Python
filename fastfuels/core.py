@@ -5,7 +5,7 @@ perform spatial queries, view fuels data in 3D and export to QuicFire.
 
 __author__     = "Holtz Forestry LLC"
 __date__       = "16 November 2020"
-__version__    = "0.3.0"
+__version__    = "0.3.1"
 __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"
@@ -360,21 +360,29 @@ class FuelsIO:
             lat2, lon2 = self.albers.inverse(self.extent_x2, self.extent_y2)
             return lon1, lat1, lon2, lat2
 
-    def query(self, a, b, mode='relative'):
+    def query(self, lon, lat, radius):
         """
-        Performs a spatial query on the fio resource
+        Performs a geographic spatial query on the fio resource. Extent of the
+        query is defined by the point (lat, lon) and a square bounding an inscribed
+        circle defined by the radius parameter
 
         Args:
-            a (2-tuple, int or float): top left hand coordinate (x1, y1)
-            b (2-tuple, int or float): lower right hand coordinate (x2, y2)
+            lon (float): longitude
+            lat (float): latitude
+            radius (int): radius of extent circle in meters
         """
 
+        return self.query_geographic(lon, lat, radius)
+
+        # changing the way we query fuels in versino 0.3.1
+        """
         if mode == 'relative':
             return self.query_relative(a, b)
         elif mode == 'projected':
             return self.query_projected(a, b)
         elif mode == 'geographic':
             return self.query_geographic(a, b)
+        """
 
     def check_bounds(self, x1, y1, x2, y2):
         """
@@ -428,13 +436,14 @@ class FuelsIO:
 
         return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel))
 
-    def query_geographic(self, a, b):
+    def query_geographic(self, lon, lat, radius):
 
-        lon1, lat1 = a
-        lon2, lat2 = b
+        x1, y1 = self.albers.forward(lat, lon)
+        x1 -= radius
+        y1 -= radius
 
-        x1, y1 = self.albers.forward(lat1, lon1)
-        x2, y2 = self.albers.forward(lat2, lon2)
+        x2 = x1 + radius*2
+        y2 = y1 + radius*2
 
         return self.query_projected((x1, y1), (x2, y2))
 
