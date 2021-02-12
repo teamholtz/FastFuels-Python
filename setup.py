@@ -22,7 +22,6 @@ setup(
   keywords = ['fire model', 'fuelscape', 'wildfire'],
   install_requires=[
           'colorcet',
-          'gcsfs',
           'numpy',
           'pyvista',
           'scipy',
