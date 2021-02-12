@@ -5,7 +5,7 @@ perform spatial queries, view fuels data in 3D and export to QuicFire.
 
 __author__     = "Holtz Forestry LLC"
 __date__       = "16 November 2020"
-__version__    = "0.0.1"
+__version__    = "0.3.0"
 __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"
@@ -267,17 +267,19 @@ class FuelsIO:
         initializes helper classes
 
         Args:
-            fname (str): path and filename of the fio resource. Setting fname
-                to 'remote' will connect to the fio resource on the cloud.
+            fname (str): path and filename of the fio resource.
         """
 
+        # No longer using the remote demo fio file hosted on GCP, moved data
+        # over to UCSD server
+
         # open connection to fio resource
-        if fname == 'remote':
-            print('connecting to remote FIO server...')
-            gcs = gcsfs.GCSFileSystem()
-            self.fio_file = zarr.open(gcs.get_mapper('gs://ca-11-2020/demo.fio'), 'r')
-        else:
-            self.fio_file = zarr.open(fname, 'r')
+        #if fname == 'remote':
+        #    print('connecting to remote FIO server...')
+        #    gcs = gcsfs.GCSFileSystem()
+        #    self.fio_file = zarr.open(gcs.get_mapper('gs://ca-11-2020/demo.fio'), 'r')
+        #else:
+        self.fio_file = zarr.open(fname, 'r')
 
         # get metadata and datasets
         self.extract_meta_data()
@@ -296,17 +298,21 @@ class FuelsIO:
         """
 
         self.extent_x1, self.extent_y1, self.extent_x2, self.extent_y2 = self.fio_file.attrs['extent']
-        self.extent_fmt = self.fio_file.attrs['extent_format']
+
+        # new fio version changed extent format key from "extent_format" to
+        # "extent_fmt"
+        self.extent_fmt = self.fio_file.attrs['extent_fmt']
 
         self.n_cols = self.extent_x2 - self.extent_x1
         self.n_rows = self.extent_y1 - self.extent_y2
 
         self.proj = self.fio_file.attrs['proj']
-
         self.res = self.fio_file.attrs['resolution']
-        self.dim = self.fio_file.attrs['dimensions']
         self.units = self.fio_file.attrs['units']
-        self.dim_fmt = self.fio_file.attrs['dim_format']
+
+        # old attributes (these are removed in new version of fio files)
+        #self.dim = self.fio_file.attrs['dimensions']
+        #self.dim_fmt = self.fio_file.attrs['dim_format']
 
     def parse_contents(self):
         """
@@ -318,17 +324,25 @@ class FuelsIO:
 
         # extract surface fuel properties and elevation
         surface_group = self.fio_file['surface']
-        self.surface_loading = surface_group['loading']
-        self.surface_fuel_depth = surface_group['fuel_depth']
+        # change key from "loading" to "load" in new fio
+        self.surface_loading = surface_group['load']
+        # change from "fuel_depth" to "depth" in new fio
+        self.surface_fuel_depth = surface_group['depth']
         self.surface_sav = surface_group['sav']
-        self.surface_emc = surface_group['emc']
-        self.elevation = surface_group['elevation']
+        # change key from "elevation" to "dem" in new fio
+        self.elevation = surface_group['dem']
+
+        # removed emc parameter in new version of fio
+        #self.surface_emc = surface_group['emc']
 
         # extract canopy fuel properties
         canopy_group = self.fio_file['canopy']
-        self.canopy_bulk_density = canopy_group['bulk_density']
+        # changed key from "bulk_density" to "bd" in new fio
+        self.canopy_bulk_density = canopy_group['bd']
         self.canopy_sav = canopy_group['sav']
-        self.canopy_sp_group = canopy_group['species_group']
+
+        # removed species_group parameter in new fio
+        #self.canopy_sp_group = canopy_group['species_group']
 
     def get_extent(self, mode='projected'):
         """
@@ -434,27 +448,39 @@ class FuelsIO:
 
         data_dict = {}
 
-        canopy_bulk_density = self.canopy_bulk_density[y1:y2, x1:x2, :]
+        canopy_bulk_density = self.canopy_bulk_density[y1:y2, x1:x2, :].astype(np.float32)
+        canopy_bulk_density = (canopy_bulk_density/255)*2.0
+
         canopy_moisture = np.zeros_like(canopy_bulk_density)
-        canopy_moisture[canopy_bulk_density != 0] = 1.0
-        surface_loading = self.surface_loading[y1:y2, x1:x2]
+        canopy_moisture[canopy_bulk_density != 0] = 1.0 # hardcoded for now
+
+        surface_loading = self.surface_loading[y1:y2, x1:x2].astype(np.float32)
+        surface_loading = (surface_loading/255)*3.0
+
         canopy_bulk_density[:,:,0] = surface_loading
         data_dict['bulk_density'] = canopy_bulk_density
 
-        canopy_sav = self.canopy_sav[y1:y2, x1:x2, :]
-        surface_sav = self.surface_sav[y1:y2, x1:x2]
+        canopy_sav = self.canopy_sav[y1:y2, x1:x2, :].astype(np.float32)
+        canopy_sav = (canopy_sav/255)*8000.0
+
+        surface_sav = self.surface_sav[y1:y2, x1:x2].astype(np.float32)
+        surface_sav = (surface_sav/255)*8000.0
+
         canopy_sav[:,:,0] = surface_sav
         data_dict['sav'] = canopy_sav
 
-        surface_moisture = self.surface_emc[y1:y2, x1:x2]
-        canopy_moisture[:,:,0] = surface_moisture/100.0
+        # surface_emc removed in new fio
+        #surface_moisture = self.surface_emc[y1:y2, x1:x2]
+        canopy_moisture[:,:,0] = 0.2 # hardcoded for new
         data_dict['moisture'] = canopy_moisture
 
         fuel_depth = np.zeros_like(canopy_sav)
-        fuel_depth[:,:,0] = self.surface_fuel_depth[y1:y2, x1:x2]
+        fuel_depth[:,:,0] = self.surface_fuel_depth[y1:y2, x1:x2].astype(np.float32)
+        fuel_depth = (fuel_depth/255)*2.0
         data_dict['fuel_depth'] = fuel_depth
 
-        data_dict['species_group'] = self.canopy_sp_group[y1:y2, x1:x2, :]
+        # removed species group parameter in new fio
+        #data_dict['species_group'] = self.canopy_sp_group[y1:y2, x1:x2, :]
 
         data_dict['elevation'] = self.elevation[y1:y2, x1:x2]
 
@@ -560,4 +586,7 @@ class FireModelWriter:
         f.write_record(data)
 
     def write_to_wfds(self, data, fname):
+        """
+        TODO: write to FDS input file
+        """
         pass

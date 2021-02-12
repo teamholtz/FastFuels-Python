@@ -21,13 +21,6 @@ A `.fio` resource is a directory-in-file object where important metadata and fue
 >>> fio = fastfuels.open('./demo.fio')
 ```
 
-Otherwise, you can connect to the cloud hosted demo.
-
-```python
->>> fio = fastfuels.open('remote')
-connecting to remote FIO server...
-```
-
 ### Explore the metadata
 
 Let's take a look at some metadata. You can get the extent of the data in geographic coordinates (longitude and latitude) or in projected coordinates by changing the `mode` argument.
@@ -45,17 +38,13 @@ And the projection system is stored in the `proj` attribute.
 >>> print(fio.proj)
 ```
 
-You can also view metadata for resolution, dimensions and units
+You can also view metadata for resolution and units
 
 ```python
 >>> print(fio.res)
 (1,1,1)
 >>> print(fio.units)
 'meters'
->>> print(fio.dim)
-(6000, 6000, 100)
->>> print(fio.dim_fmt)
-'x,y,z'
 ```
 
 ### Spatial queries
