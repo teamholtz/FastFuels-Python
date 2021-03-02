@@ -5,7 +5,7 @@ perform spatial queries, view fuels data in 3D and export to QuicFire.
 
 __author__     = "Holtz Forestry LLC"
 __date__       = "16 November 2020"
-__version__    = "0.4.0"
+__version__    = "0.4.1"
 __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"
@@ -16,6 +16,11 @@ import numpy as np # pip3 install numpy
 import pyvista as pv # pip3 install pyvista
 from scipy.io import FortranFile #pip3 install scipy
 import zarr # pip3 install zarr
+
+# new imports in version 0.4.1
+import geopandas as gpd
+from rasterio.features import geometry_mask
+from shapely.geometry import Polygon
 
 # --------------
 # USERSPACE DEFS
@@ -260,7 +265,7 @@ class FuelsIO:
             class
     """
 
-    def __init__(self, fname):
+    def __init__(self, fio_fname, roads_fname, water_fname, fire_fname):
         """
         Opens a connection to the fio resource, extracts metadata and
         initializes helper classes
@@ -278,6 +283,7 @@ class FuelsIO:
         #    gcs = gcsfs.GCSFileSystem()
         #    self.fio_file = zarr.open(gcs.get_mapper('gs://ca-11-2020/demo.fio'), 'r')
         #else:
+
         self.fio_file = zarr.open(fname, 'r')
 
         # get metadata and datasets
@@ -290,6 +296,11 @@ class FuelsIO:
 
         # default cache limit
         self.cache_limit = 1e9
+
+        # class attributes for the new stuff from Daniel R-G
+        self.roads_fname = roads_fname
+        self.water_fname = water_fname
+        self.fire_fname = fire_fname
 
     def extract_meta_data(self):
         """
@@ -444,6 +455,8 @@ class FuelsIO:
         x2 = x1 + radius*2
         y2 = y1 - radius*2
 
+        self.bbox = (x1, y1, x2, y2)
+
         return self.query_projected((x1, y1), (x2, y2))
 
     def slice_and_merge(self, y1, y2, x1, x2):
@@ -492,7 +505,148 @@ class FuelsIO:
 
         data_dict['elevation'] = self.elevation[y1:y2, x1:x2]
 
+        data_dict = self.mask_features(data_dict)
+
         return FuelsROI(data_dict)
+
+    # -------------------------------------------------------------
+    # New methods from Daniel R-G (Not tested, last minute request)
+    # -------------------------------------------------------------
+    def roads_buffer(self):
+        '''
+        Uses MAF/TIGER Feature Class Code Definitions to assign particular widths to
+        roads and returns a polygon shapefile containing said buffers
+        '''
+
+        sd_roads  = gpd.read_file(self.roads_fname, self.bbox)
+        if (sd_roads.shape[0]>0):
+
+            # S1100: Primary Road, S1200: Secondary Road, S1400: Local Road, S1500: Vehicular Trail
+            # S1630: Ramp, S1640: Service Drive, S1710: Walkway, S1720: Stairway, S1730: Alley,
+            # S1740: Private Road, S1750: Internal USCB Use, S1780: Parking Lot Road, S1820: Bike Path
+            # S1830: Bridle Path
+            road_categories = ['S1100','S1200','S1400','S1500','S1630','S1640',
+                               'S1710','S1720','S1730','S1740','S1750','S1780',
+                               'S1820','S1830']
+            road_buffers = [15., 10., 5., 3., 8., 5., 0., 0., 2., 3., 3., 2., 0., 0. ]
+            roads_geo = gpd.GeoSeries()
+            roads_geo.set_crs("ESRI:102039")
+            polygon = Polygon([(self.bbox[0], self.bbox[1]),
+                               (self.bbox[0], self.bbox[3]),
+                               (self.bbox[2], self.bbox[3]),
+                               (self.bbox[2], self.bbox[1]),
+                               (self.bbox[0], self.bbox[1])])
+            poly_gdf = gpd.GeoDataFrame([1], geometry=[polygon], crs=sd_roads.crs)
+            rds = gpd.clip(sd_roads,poly_gdf)
+            #rds.plot(color='k',ax=ax)
+
+            for i, elem in enumerate(road_categories):
+                if (road_buffers[i] > 0):
+                    roads_geo = roads_geo.append(rds.query("MTFCC == '{}'".format(elem)).buffer(road_buffers[i]))
+
+            self.remove_shapefile(rds)
+
+        else:
+            pass
+
+    def water_buffer(self):
+        '''
+        Uses NHD Hydrography Features to assign particular widths to the vector shapefile
+        containing stream information and returns a polygon shapefile with the stream buffers
+        '''
+
+        sd_water = gpd.read_file(self.water_fname, self.bbox)
+        if (sd_water.shape[0]>0):
+
+            # 336: Canal/Ditch, 460: Stream/River, 558: Artificial Path,
+            # 334: Connector, 428: Pipeline, 420: Underground Conduit
+            water_categories = [460, 558,336, 334, 428, 420]
+            water_buffers = [3.,6.,2.,0.,0.,0.]
+            water_geo = gpd.GeoSeries()
+            water_geo.set_crs("ESRI:102039")
+            polygon = Polygon([(self.bbox[0], self.bbox[1]),
+                               (self.bbox[0], self.bbox[3]),
+                               (self.bbox[2], self.bbox[3]),
+                               (self.bbox[2], self.bbox[1]),
+                               (self.bbox[0], self.bbox[1])])
+            poly_gdf = gpd.GeoDataFrame([1], geometry=[polygon], crs=sd_water.crs)
+            wtr = gpd.clip(sd_water,poly_gdf)
+
+            for i, elem in enumerate(water_categories):
+                if (water_buffers[i] > 0):
+                    water_geo = water_geo.append(wtr.query("FType == {}".format(elem)).buffer(water_buffers[i]))
+
+            self.remove_shapefile(water_geo)
+
+        else:
+            pass
+
+    def fire_buffer(self):
+        '''
+        Uses year since last burn to return a polygon shapefile with just the burns
+        over the required years
+        '''
+        sd_fire = gpd.read_file(self.fire_fname, self.bbox)
+        if (sd_fire.shape[0]>0):
+            fire_geo = gpd.GeoSeries()
+            fire_geo.set_crs("ESRI:102039")
+            fire_geo = fire_geo.append(sd_fire.query("year > 2015").buffer(0))
+
+            polygon = Polygon([(self.bbox[0], self.bbox[1]),
+                               (self.bbox[0], self.bbox[3]),
+                               (self.bbox[2], self.bbox[3]),
+                               (self.bbox[2], self.bbox[1]),
+                               (self.bbox[0], self.bbox[1])])
+            poly_gdf = gpd.GeoDataFrame([1], geometry=[polygon], crs=sd_fire.crs)
+
+            fire_clip = gpd.clip(fire_geo, poly_gdf)
+            self.remove_shapefile(fire_clip)
+
+        else:
+            pass
+
+    def remove_shapefile(self, shapefile):
+        '''
+        Uses shapefile to mask out the fuels in the array provided
+        '''
+
+        total_bounds = shapefile.total_bounds
+        geoT = (1.0,0.0,total_bounds[0],
+               0.0,1.0,total_bounds[1])
+        shp_mask = geometry_mask(shapefile.geometry, np.shape(self.feature_mask), geoT)
+        self.feature_mask *= shp_mask
+
+    def apply_mask(self, arr):
+        '''
+        Applies mask to specified array
+        '''
+
+        if (np.shape(self.feature_mask) == np.shape(arr[:,:,0])):
+            masked_array = np.copy(arr)
+            (ny,nx,nz) = np.shape(arr)
+            for l in range(nz):
+                masked_array[:,:,l] *= self.feature_mask
+            return masked_array
+        else:
+            print('Mismatch in mask and array size')
+
+    def mask_features(self, data_dict):
+
+        # init mask
+        (xmin, ymax, xmax, ymin) = self.bbox
+        x_ext, y_ext = [int(xmax-xmin),int(ymax-ymin)]
+        self.feature_mask = np.ones([y_ext,x_ext],dtype=bool)
+
+        # construct mask
+        self.fire_buffer()
+        self.water_buffer()
+        self.roads_buffer()
+        self.feature_mask = np.flipud(self.feature_mask)
+
+        for array_key in data_dict.keys():
+            data_dict[array_key] = self.apply_mask(self.feature_mask, data_dict[array_key])
+
+        return data_dict
 
 
 class FuelsROI:
