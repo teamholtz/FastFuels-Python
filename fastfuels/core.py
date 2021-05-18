@@ -16,11 +16,17 @@ import numpy as np # pip3 install numpy
 import pyvista as pv # pip3 install pyvista
 from scipy.io import FortranFile #pip3 install scipy
 import zarr # pip3 install zarr
+import s3fs # pip3 install s3fs
+
+try:
+    from urllib.parse import urlparse
+except ImportError:
+    from urllib2.parse import urlparse
 
 # --------------
 # USERSPACE DEFS
 # --------------
-def open(fname):
+def open(fname, ftype='local', username=None, password=None):
     """
     Helper function for opening a .fio file. Additional user actions on
     fuels data can be accessed through the class instance returned by this
@@ -28,13 +34,15 @@ def open(fname):
 
     Args:
         fname (str): path and filename of the .fio resource
+        ftype (str): file type, either 'local' or 's3'
+        username (str): user name to access file
+        password (str): password to access file
 
     Returns:
         An instance of FuelsIO
     """
 
-    return FuelsIO(fname)
-
+    return FuelsIO(fname, ftype, username, password)
 
 # --------------
 # HELPER CLASSES
@@ -260,13 +268,16 @@ class FuelsIO:
             class
     """
 
-    def __init__(self, fname):
+    def __init__(self, fname, ftype='local', username=None, password=None):
         """
         Opens a connection to the fio resource, extracts metadata and
         initializes helper classes
 
         Args:
             fname (str): path and filename of the fio resource.
+            ftype (str): file type, either 'local' or 's3'
+            username (str): user name to access file
+            password (str): password to access file
         """
 
         # No longer using the remote demo fio file hosted on GCP, moved data
@@ -278,7 +289,29 @@ class FuelsIO:
         #    gcs = gcsfs.GCSFileSystem()
         #    self.fio_file = zarr.open(gcs.get_mapper('gs://ca-11-2020/demo.fio'), 'r')
         #else:
-        self.fio_file = zarr.open(fname, 'r')
+
+        if ftype == 'local':
+            self.fio_file = zarr.open(fname, 'r')
+        elif ftype == 's3':
+
+            # use urlparse to separate the hostname and port from path
+            url = urlparse(fname) 
+            endpoint = url.scheme + "://" + url.hostname
+            if url.port:
+             endpoint += ":" + str(url.port)
+   
+            s3 = s3fs.S3FileSystem(client_kwargs={
+              "endpoint_url": endpoint,
+              "verify": False,
+              },
+              username=username,
+              password=password
+            )
+            store = s3fs.S3Map(root=url.path, s3=s3, check=False)
+            self.fio_file = zarr.group(store=store)
+
+        else:
+            raise Exception('Unknown type: ' + ftype)  
 
         # get metadata and datasets
         self.extract_meta_data()
