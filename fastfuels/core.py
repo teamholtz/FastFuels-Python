@@ -450,7 +450,7 @@ class FuelsIO:
 
         if self.check_bounds(x1, y1, x2, y2):
             if self.check_cache(x1, y1, x2, y2):
-                return self.slice_and_merge(y1, y2, x1, x2)
+                return self.slice_and_merge(y1, y2, x1, x2, property)
             else:
                 print('ERROR: area too large')
         else:
@@ -480,7 +480,7 @@ class FuelsIO:
 
         return self.query_projected((x1, y1), (x2, y2), property)
 
-    def slice_and_merge(self, y1, y2, x1, x2, property):
+    def slice_and_merge(self, y1, y2, x1, x2, prop):
         """
         Queries the fuel array datasets and loads to memory
 
