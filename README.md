@@ -18,7 +18,13 @@ A `.fio` resource is a directory-in-file object where important metadata and fue
 
 ```python
 >>> import fastfuels
->>> fio = fastfuels.open('./demo.fio')
+>>> fio = fastfuels.open('./demo.fio', ftype='local')
+```
+
+If you have the appropriate credentials, you can connect to the remote resource stored in AWS S3.
+
+```python
+>>> fio = fastfuels.open('./ca.fio', ftype='s3', username='username', password='password')
 ```
 
 ### Explore the metadata
@@ -72,7 +78,7 @@ Then specify one of the properties in the `view()` method on the `roi` object.
 roi.view('sav')
 ```
 
-![FastFuels SAV](https://storage.googleapis.com/public-assests/fastfuels_sav.png)
+![FastFuels SAV](./resources/fastfuels_sav.png)
 
 ### Writing fire model input files
 
