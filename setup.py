@@ -10,7 +10,7 @@ README = (HERE / "README.md").read_text()
 setup(
   name = 'fastfuels',
   packages = ['fastfuels'],
-  version = '0.4.0',
+  version = '0.5.0',
   license='GNU GPLv3',
   description = '3D fuelscapes for the contiguous US',
   long_description = README,
@@ -23,6 +23,7 @@ setup(
           'colorcet',
           'numpy',
           'pyvista',
+          's3fs',
           'scipy',
           'zarr',
       ],

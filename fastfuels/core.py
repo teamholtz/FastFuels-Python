@@ -5,7 +5,7 @@ perform spatial queries, view fuels data in 3D and export to QuicFire.
 
 __author__     = "Holtz Forestry LLC"
 __date__       = "16 November 2020"
-__version__    = "0.4.0"
+__version__    = "0.5.0"
 __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"
@@ -16,11 +16,17 @@ import numpy as np # pip3 install numpy
 import pyvista as pv # pip3 install pyvista
 from scipy.io import FortranFile #pip3 install scipy
 import zarr # pip3 install zarr
+import s3fs # pip3 install s3fs
+
+try:
+    from urllib.parse import urlparse
+except ImportError:
+    from urllib2.parse import urlparse
 
 # --------------
 # USERSPACE DEFS
 # --------------
-def open(fname):
+def open(fname, ftype='local', username=None, password=None):
     """
     Helper function for opening a .fio file. Additional user actions on
     fuels data can be accessed through the class instance returned by this
@@ -28,13 +34,15 @@ def open(fname):
 
     Args:
         fname (str): path and filename of the .fio resource
+        ftype (str): file type, either 'local' or 's3'
+        username (str): user name to access file
+        password (str): password to access file
 
     Returns:
         An instance of FuelsIO
     """
 
-    return FuelsIO(fname)
-
+    return FuelsIO(fname, ftype, username, password)
 
 # --------------
 # HELPER CLASSES
@@ -260,13 +268,16 @@ class FuelsIO:
             class
     """
 
-    def __init__(self, fname):
+    def __init__(self, fname, ftype='local', username=None, password=None):
         """
         Opens a connection to the fio resource, extracts metadata and
         initializes helper classes
 
         Args:
             fname (str): path and filename of the fio resource.
+            ftype (str): file type, either 'local' or 's3'
+            username (str): user name to access file
+            password (str): password to access file
         """
 
         # No longer using the remote demo fio file hosted on GCP, moved data
@@ -278,7 +289,29 @@ class FuelsIO:
         #    gcs = gcsfs.GCSFileSystem()
         #    self.fio_file = zarr.open(gcs.get_mapper('gs://ca-11-2020/demo.fio'), 'r')
         #else:
-        self.fio_file = zarr.open(fname, 'r')
+
+        if ftype == 'local':
+            self.fio_file = zarr.open(fname, 'r')
+        elif ftype == 's3':
+
+            # use urlparse to separate the hostname and port from path
+            url = urlparse(fname) 
+            endpoint = url.scheme + "://" + url.hostname
+            if url.port:
+             endpoint += ":" + str(url.port)
+   
+            s3 = s3fs.S3FileSystem(client_kwargs={
+              "endpoint_url": endpoint,
+              "verify": False,
+              },
+              username=username,
+              password=password
+            )
+            store = s3fs.S3Map(root=url.path, s3=s3, check=False)
+            self.fio_file = zarr.group(store=store)
+
+        else:
+            raise Exception('Unknown type: ' + ftype)  
 
         # get metadata and datasets
         self.extract_meta_data()
@@ -359,7 +392,7 @@ class FuelsIO:
             lat2, lon2 = self.albers.inverse(self.extent_x2, self.extent_y2)
             return lon1, lat1, lon2, lat2
 
-    def query(self, lon, lat, radius):
+    def query(self, lon, lat, radius, property=None):
         """
         Performs a geographic spatial query on the fio resource. Extent of the
         query is defined by the point (lat, lon) and a square bounding an inscribed
@@ -369,9 +402,10 @@ class FuelsIO:
             lon (float): longitude
             lat (float): latitude
             radius (int): radius of extent circle in meters
+            property (list, default=None): properties to query, defaults to every property
         """
 
-        return self.query_geographic(lon, lat, radius)
+        return self.query_geographic(lon, lat, radius, property)
 
         # changing the way we query fuels in versino 0.3.1
         """
@@ -409,21 +443,21 @@ class FuelsIO:
             return 0
         return 1
 
-    def query_relative(self, a, b):
+    def query_relative(self, a, b, property=None):
 
         x1, y1 = a
         x2, y2 = b
 
         if self.check_bounds(x1, y1, x2, y2):
             if self.check_cache(x1, y1, x2, y2):
-                return self.slice_and_merge(y1, y2, x1, x2)
+                return self.slice_and_merge(y1, y2, x1, x2, property)
             else:
                 print('ERROR: area too large')
         else:
             print('ERROR: bounding box query out of bounds')
             return -1
 
-    def query_projected(self, a, b):
+    def query_projected(self, a, b, property=None):
 
         x1, y1 = a
         x2, y2 = b
@@ -433,9 +467,9 @@ class FuelsIO:
         x2_rel = int(x2 - self.extent_x1)
         y2_rel = int(self.extent_y1 - y2)
 
-        return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel))
+        return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel), property)
 
-    def query_geographic(self, lon, lat, radius):
+    def query_geographic(self, lon, lat, radius, property=None):
 
         x1, y1 = self.albers.forward(lat, lon)
         x1 -= radius
@@ -444,9 +478,9 @@ class FuelsIO:
         x2 = x1 + radius*2
         y2 = y1 - radius*2
 
-        return self.query_projected((x1, y1), (x2, y2))
+        return self.query_projected((x1, y1), (x2, y2), property)
 
-    def slice_and_merge(self, y1, y2, x1, x2):
+    def slice_and_merge(self, y1, y2, x1, x2, prop):
         """
         Queries the fuel array datasets and loads to memory
 
@@ -456,41 +490,46 @@ class FuelsIO:
 
         data_dict = {}
 
-        canopy_bulk_density = self.canopy_bulk_density[y1:y2, x1:x2, :].astype(np.float32)
-        canopy_bulk_density = (canopy_bulk_density/255)*2.0
+        if not prop or 'bulk_density' in prop:
+            canopy_bulk_density = self.canopy_bulk_density[y1:y2, x1:x2, :].astype(np.float32)
+            canopy_bulk_density = (canopy_bulk_density/255)*2.0
 
-        canopy_moisture = np.zeros_like(canopy_bulk_density)
-        canopy_moisture[canopy_bulk_density != 0] = 1.0 # hardcoded for now
+            canopy_moisture = np.zeros_like(canopy_bulk_density)
+            canopy_moisture[canopy_bulk_density != 0] = 1.0 # hardcoded for now
 
-        surface_loading = self.surface_loading[y1:y2, x1:x2].astype(np.float32)
-        surface_loading = (surface_loading/255)*3.0
+            surface_loading = self.surface_loading[y1:y2, x1:x2].astype(np.float32)
+            surface_loading = (surface_loading/255)*3.0
 
-        canopy_bulk_density[:,:,0] = surface_loading
-        data_dict['bulk_density'] = canopy_bulk_density
+            canopy_bulk_density[:,:,0] = surface_loading
+            data_dict['bulk_density'] = canopy_bulk_density
 
-        canopy_sav = self.canopy_sav[y1:y2, x1:x2, :].astype(np.float32)
-        canopy_sav = (canopy_sav/255)*8000.0
+        if not prop or 'sav' in prop:
+            canopy_sav = self.canopy_sav[y1:y2, x1:x2, :].astype(np.float32)
+            canopy_sav = (canopy_sav/255)*8000.0
 
-        surface_sav = self.surface_sav[y1:y2, x1:x2].astype(np.float32)
-        surface_sav = (surface_sav/255)*8000.0
+            surface_sav = self.surface_sav[y1:y2, x1:x2].astype(np.float32)
+            surface_sav = (surface_sav/255)*8000.0
 
-        canopy_sav[:,:,0] = surface_sav
-        data_dict['sav'] = canopy_sav
+            canopy_sav[:,:,0] = surface_sav
+            data_dict['sav'] = canopy_sav
 
-        # surface_emc removed in new fio
-        #surface_moisture = self.surface_emc[y1:y2, x1:x2]
-        canopy_moisture[:,:,0] = 0.2 # hardcoded for new
-        data_dict['moisture'] = canopy_moisture
+        if not prop or 'moisture' in prop:
+            # surface_emc removed in new fio
+            #surface_moisture = self.surface_emc[y1:y2, x1:x2]
+            canopy_moisture[:,:,0] = 0.2 # hardcoded for new
+            data_dict['moisture'] = canopy_moisture
 
-        fuel_depth = np.zeros_like(canopy_sav)
-        fuel_depth[:,:,0] = self.surface_fuel_depth[y1:y2, x1:x2].astype(np.float32)
-        fuel_depth = (fuel_depth/255)*2.0
-        data_dict['fuel_depth'] = fuel_depth
+        if not prop or 'fuel_depth' in prop:
+            fuel_depth = np.zeros_like(canopy_sav)
+            fuel_depth[:,:,0] = self.surface_fuel_depth[y1:y2, x1:x2].astype(np.float32)
+            fuel_depth = (fuel_depth/255)*2.0
+            data_dict['fuel_depth'] = fuel_depth
 
         # removed species group parameter in new fio
         #data_dict['species_group'] = self.canopy_sp_group[y1:y2, x1:x2, :]
 
-        data_dict['elevation'] = self.elevation[y1:y2, x1:x2]
+        if not prop or 'elevation' in prop:
+            data_dict['elevation'] = self.elevation[y1:y2, x1:x2]
 
         return FuelsROI(data_dict)
 
@@ -536,9 +575,15 @@ class FuelsROI:
         self.viewer.add(property)
         self.viewer.show()
 
-    def write(self, path, model='quicfire', res_xyz=[1,1,1]):
+    def write(self, path, model='quicfire', res_xyz=[1,1,1], property=None):
         """
         Writes fuel arrays to a fire model. Currently only implements QUICFire
+
+        Args:
+            path (str): path to write outputs
+            model (str): the type of model outputs
+            res_xyz (list): resolution of outputs
+            property (str): data property to write
         """
 
         if model == 'quicfire':
@@ -554,6 +599,12 @@ class FuelsROI:
             self.writer.write_to_quicfire(self.data_dict['elevation'],
                 path + '/' + 'elevation.dat', res_xyz)
             print('complete')
+        elif model == 'vtk':
+            if not property:
+                raise Exception('Must specify fuel property for VTK output.')
+            elif property not in self.data_dict:
+                raise Exception('Invalid fuel property {}'.format(property))
+            self.writer.write_to_vtk(self.data_dict[property], path)
         elif model == 'wfds':
             print('wfds writer not implemented')
 
@@ -592,6 +643,24 @@ class FireModelWriter:
         data = data.T
         f = FortranFile(fname, 'w', 'uint32')
         f.write_record(data)
+
+    def write_to_vtk(self, data, fname):
+        """
+        Write to VTK input file.
+        """
+        fp = data
+
+        # move zeros to -1 for thresholding
+        fp[fp == 0] = -1
+
+        # convert the 3D array to a Pyvista UniformGrid
+        grid = pv.UniformGrid()
+        grid.dimensions = np.array(fp.shape) + 1
+        grid.spacing = [1,1,1]
+        grid.cell_arrays['values'] = fp.flatten(order='F')
+        grid = grid.threshold(0)
+
+        grid.extract_geometry().save(fname, binary=True)
 
     def write_to_wfds(self, data, fname):
         """
