@@ -23,6 +23,7 @@ setup(
           'colorcet',
           'numpy',
           'pyvista',
+          's3fs',
           'scipy',
           'zarr',
       ],
