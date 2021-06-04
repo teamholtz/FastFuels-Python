@@ -329,11 +329,17 @@ class FuelsIO:
         Gets metadata from fio resource attributes
         """
 
-        self.extent_x1, self.extent_y1, self.extent_x2, self.extent_y2 = self.fio_file.attrs['extent']
 
         # new fio version changed extent format key from "extent_format" to
         # "extent_fmt"
         self.extent_fmt = self.fio_file.attrs['extent_fmt']
+
+        if self.extent_fmt == '[x1, y1, x2, y2]':
+            self.extent_x1, self.extent_y1, self.extent_x2, self.extent_y2 = self.fio_file.attrs['extent']
+        elif self.extent_fmt == '[[x1, y1], [x2, y2]]':
+            (self.extent_x1, self.extent_y1), (self.extent_x2, self.extent_y2) = self.fio_file.attrs['extent']
+        else:
+            raise Exception(f'Unknown extent format: {self.extent_fmt}')
 
         self.n_cols = self.extent_x2 - self.extent_x1
         self.n_rows = self.extent_y1 - self.extent_y2
