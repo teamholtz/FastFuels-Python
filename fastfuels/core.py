@@ -334,7 +334,7 @@ class FuelsIO:
         # "extent_fmt"
         self.extent_fmt = self.fio_file.attrs['extent_fmt']
 
-        if self.extent_fmt == '[x1, y1, x2, y2]':
+        if self.extent_fmt == '(x1, y1), (x2, y2)' and len(self.fio_file.attrs['extent']) == 4:
             self.extent_x1, self.extent_y1, self.extent_x2, self.extent_y2 = self.fio_file.attrs['extent']
         elif self.extent_fmt == '[[x1, y1], [x2, y2]]':
             (self.extent_x1, self.extent_y1), (self.extent_x2, self.extent_y2) = self.fio_file.attrs['extent']
