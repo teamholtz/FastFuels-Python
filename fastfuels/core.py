@@ -413,7 +413,7 @@ class FuelsIO:
 
         return self.query_geographic(lon, lat, radius, property)
 
-        # changing the way we query fuels in versino 0.3.1
+        # changing the way we query fuels in version 0.3.1
         """
         if mode == 'relative':
             return self.query_relative(a, b)
@@ -449,14 +449,14 @@ class FuelsIO:
             return 0
         return 1
 
-    def query_relative(self, a, b, property=None):
+    def query_relative(self, a, b, property=None, extent=None):
 
         x1, y1 = a
         x2, y2 = b
 
         if self.check_bounds(x1, y1, x2, y2):
             if self.check_cache(x1, y1, x2, y2):
-                return self.slice_and_merge(y1, y2, x1, x2, property)
+                return self.slice_and_merge(y1, y2, x1, x2, property, extent)
             else:
                 print('ERROR: area too large')
         else:
@@ -468,12 +468,14 @@ class FuelsIO:
         x1, y1 = a
         x2, y2 = b
 
+        query_extent = int(x1), int(y1), int(x2), int(y2)
+
         x1_rel = int(x1 - self.extent_x1)
         y1_rel = int(self.extent_y1 - y1)
         x2_rel = int(x2 - self.extent_x1)
         y2_rel = int(self.extent_y1 - y2)
 
-        return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel), property)
+        return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel), property, query_extent)
 
     def query_geographic(self, lon, lat, radius, property=None):
 
@@ -483,10 +485,10 @@ class FuelsIO:
 
         x2 = x1 + radius*2
         y2 = y1 - radius*2
-
+        
         return self.query_projected((x1, y1), (x2, y2), property)
 
-    def slice_and_merge(self, y1, y2, x1, x2, prop):
+    def slice_and_merge(self, y1, y2, x1, x2, prop, extent):
         """
         Queries the fuel array datasets and loads to memory
 
@@ -537,7 +539,7 @@ class FuelsIO:
         if not prop or 'elevation' in prop:
             data_dict['elevation'] = self.elevation[y1:y2, x1:x2]
 
-        return FuelsROI(data_dict)
+        return FuelsROI(data_dict, extent=extent)
 
 
 class FuelsROI:
@@ -548,15 +550,17 @@ class FuelsROI:
     Attributes:
         data_dict (dictionary): Keys are fuel properties and values are 3D
             arrays
+        extent (list): Extent of ROI
     """
 
-    def __init__(self, data_dict):
+    def __init__(self, data_dict, extent=None):
         """
         initializes attributes and instantiates Viewer and FuelModelWriter
         objects.
         """
 
         self.data_dict = data_dict
+        self.extent = extent
         self.viewer = Viewer(data_dict)
         self.writer = FireModelWriter()
 
