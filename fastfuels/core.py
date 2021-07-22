@@ -218,13 +218,14 @@ class Viewer:
         self.data = data
         self.plotter = pv.Plotter(title='FastFuels')
 
-    def add(self, property):
+    def add(self, property, topography=False):
         """
         Adds a 3D array to the plotter instance
 
         Args:
             property (str): fuel parameter to show, parameter string must be in
                 the key list of the data dictionary
+            topography (bool): use elevation data to show topography
 
         Note:
             Use the `get_properties()` method to get available fuel properties.
@@ -232,6 +233,30 @@ class Viewer:
 
         # extract the property array from the data dictionary
         fp = self.data[property]
+
+        if topography:
+
+            if 'elevation' not in self.data:
+                raise Exception('Must query elevation in order to show topography.')
+
+            #print('data shape', fp.shape)
+            elev_min = np.min(self.data['elevation'])
+            elev_max = np.max(self.data['elevation'])
+            elev_diff = elev_max - elev_min
+            #print('elev',  elev_max, '-', elev_min, '=', elev_diff)
+
+            # expand
+            z = np.zeros((fp.shape[0], fp.shape[1], elev_diff), dtype=fp.dtype)
+            fp = np.concatenate((fp,z), axis=2)
+            #print('new data shape', fp.shape)
+
+            # roll
+            for i in range(fp.shape[0]):
+                for j in range(fp.shape[1]):
+                    # np.roll is way to slow so use slicing instead
+                    diff = self.data['elevation'][i][j] - elev_min + 1
+                    fp[i][j][diff:] = fp[i][j][:-diff]
+                    fp[i][j][:diff] = 0
 
         # move zeros to -1 for thresholding
         fp[fp == 0] = -1
@@ -739,15 +764,16 @@ class FuelsROI:
 
         return list(self.data_dict.keys())
 
-    def view(self, property):
+    def view(self, property, topography=False):
         """
         Display 3D array of given fuel property
 
         Args:
             property (str): fuel property
+            topography (bool): use elevation data to show topography
         """
 
-        self.viewer.add(property)
+        self.viewer.add(property, topography)
         self.viewer.show()
 
     def write(self, path, model='quicfire', res_xyz=[1,1,1], property=None):
@@ -782,7 +808,7 @@ class FuelsROI:
                 raise Exception('Must specify fuel property for VTK output.')
             elif property not in self.data_dict:
                 raise Exception('Invalid fuel property {}'.format(property))
-            self.writer.write_to_vtk(self.data_dict[property], path)
+            self.writer.write_to_vtk(self.data_dict, property, path)
         elif model == 'wfds':
             print('wfds writer not implemented')
 
@@ -822,11 +848,35 @@ class FireModelWriter:
         f = FortranFile(fname, 'w', 'uint32')
         f.write_record(data)
 
-    def write_to_vtk(self, data, fname):
+    def write_to_vtk(self, data, property, fname):
         """
         Write to VTK input file.
         """
-        fp = data
+
+        # FIXME this mostly duplicates Viewer.add()
+
+        fp = data[property]
+
+        if 'elevation' in data:
+
+            #print('data shape', fp.shape)
+            elev_min = np.min(data['elevation'])
+            elev_max = np.max(data['elevation'])
+            elev_diff = elev_max - elev_min
+            #print('elev',  elev_max, '-', elev_min, '=', elev_diff)
+
+            # expand
+            z = np.zeros((fp.shape[0], fp.shape[1], elev_diff), dtype=fp.dtype)
+            fp = np.concatenate((fp,z), axis=2)
+            #print('new data shape', fp.shape)
+
+            # roll
+            for i in range(fp.shape[0]):
+                for j in range(fp.shape[1]):
+                    # np.roll is way to slow so use slicing instead
+                    diff = data['elevation'][i][j] - elev_min + 1
+                    fp[i][j][diff:] = fp[i][j][:-diff]
+                    fp[i][j][:diff] = 0
 
         # move zeros to -1 for thresholding
         fp[fp == 0] = -1
