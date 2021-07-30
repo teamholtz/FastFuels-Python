@@ -10,6 +10,10 @@ __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"
 
+import builtins
+import json
+import os
+
 # external imports
 import colorcet # pip3 install colorcet
 import numpy as np # pip3 install numpy
@@ -17,6 +21,9 @@ import pyvista as pv # pip3 install pyvista
 from scipy.io import FortranFile #pip3 install scipy
 import zarr # pip3 install zarr
 import s3fs # pip3 install s3fs
+from shapely.strtree import STRtree # pip3 install shapely
+from shapely.geometry import Point, Polygon # pip3 install shapely
+
 
 try:
     from urllib.parse import urlparse
@@ -42,7 +49,7 @@ def open(fname, ftype='local', username=None, password=None):
         An instance of FuelsIO
     """
 
-    return FuelsIO(fname, ftype, username, password)
+    return FuelsIO(fname, ftype, username=username, password=password)
 
 # --------------
 # HELPER CLASSES
@@ -211,13 +218,14 @@ class Viewer:
         self.data = data
         self.plotter = pv.Plotter(title='FastFuels')
 
-    def add(self, property):
+    def add(self, property, topography=False):
         """
         Adds a 3D array to the plotter instance
 
         Args:
             property (str): fuel parameter to show, parameter string must be in
                 the key list of the data dictionary
+            topography (bool): use elevation data to show topography
 
         Note:
             Use the `get_properties()` method to get available fuel properties.
@@ -225,6 +233,30 @@ class Viewer:
 
         # extract the property array from the data dictionary
         fp = self.data[property]
+
+        if topography:
+
+            if 'elevation' not in self.data:
+                raise Exception('Must query elevation in order to show topography.')
+
+            #print('data shape', fp.shape)
+            elev_min = np.min(self.data['elevation'])
+            elev_max = np.max(self.data['elevation'])
+            elev_diff = elev_max - elev_min
+            #print('elev',  elev_max, '-', elev_min, '=', elev_diff)
+
+            # expand
+            z = np.zeros((fp.shape[0], fp.shape[1], elev_diff), dtype=fp.dtype)
+            fp = np.concatenate((fp,z), axis=2)
+            #print('new data shape', fp.shape)
+
+            # roll
+            for i in range(fp.shape[0]):
+                for j in range(fp.shape[1]):
+                    # np.roll is way to slow so use slicing instead
+                    diff = self.data['elevation'][i][j] - elev_min + 1
+                    fp[i][j][diff:] = fp[i][j][:-diff]
+                    fp[i][j][:diff] = 0
 
         # move zeros to -1 for thresholding
         fp[fp == 0] = -1
@@ -290,8 +322,34 @@ class FuelsIO:
         #    self.fio_file = zarr.open(gcs.get_mapper('gs://ca-11-2020/demo.fio'), 'r')
         #else:
 
+        self._ftype = ftype
+
+        #print(f'FuelsIO({fname}, {ftype}, {username}, {password}')
+
         if ftype == 'local':
-            self.fio_file = zarr.open(fname, 'r')
+
+            self.fio_file = None
+
+            if not os.path.exists(fname):
+                raise Exception(f'File does not exist: {fname}')
+
+            # FIXME workaround for bug #769
+            # https://github.com/zarr-developers/zarr-python/issues/769
+            if os.path.exists(f'{fname}/surface/dem/.zarray'):
+                with builtins.open(f'{fname}/surface/dem/.zarray') as f:
+                    j = json.load(f)
+                    if 'dimension_separator' in j:
+                        if j['dimension_separator'] == '/':
+                            store = zarr.NestedDirectoryStore(fname)
+                            self.fio_file = zarr.group(store=store, overwrite=False)
+                        else:
+                            raise Exception(f'Unknown dimension_separator: {j["dimension_separator"]}')
+           
+            if not self.fio_file:
+                self.fio_file = zarr.open(fname, 'r')
+
+            self._fio_path = fname
+
         elif ftype == 's3':
 
             # use urlparse to separate the hostname and port from path
@@ -300,14 +358,19 @@ class FuelsIO:
             if url.port:
              endpoint += ":" + str(url.port)
    
-            s3 = s3fs.S3FileSystem(client_kwargs={
+            self._s3 = s3fs.S3FileSystem(client_kwargs={
               "endpoint_url": endpoint,
               "verify": False,
               },
               username=username,
               password=password
             )
-            store = s3fs.S3Map(root=url.path, s3=s3, check=False)
+            self._fio_path = url.path
+            self._fio_endpoint = endpoint
+            self._fio_username = username
+            self._fio_password = password
+
+            store = s3fs.S3Map(root=url.path, s3=self._s3, check=False)
             self.fio_file = zarr.group(store=store)
 
         else:
@@ -315,7 +378,9 @@ class FuelsIO:
 
         # get metadata and datasets
         self.extract_meta_data()
-        self.parse_contents()
+
+        if not self._is_index:
+            self.parse_contents()
 
         # instantiate helper classes
         self.albers = AlbersEqualAreaConic()
@@ -323,6 +388,22 @@ class FuelsIO:
 
         # default cache limit
         self.cache_limit = 1e9
+
+
+    def _parse_extent(self, extent, extent_fmt):
+        """
+        Parse the extent format to read the extent. Private method.
+        
+        Returns:
+            (x1,y1,x2,y2): the extent bounding box values
+        """
+        if extent_fmt == '(x1, y1), (x2, y2)' and len(extent) == 4:
+            return extent
+        elif extent_fmt == '[[x1, y1], [x2, y2]]':
+            return extent[0][0], extent[0][1], extent[1][0], extent[1][1]
+        else:
+            raise Exception(f'Unknown extent format: {extent_fmt}')
+
 
     def extract_meta_data(self):
         """
@@ -334,12 +415,8 @@ class FuelsIO:
         # "extent_fmt"
         self.extent_fmt = self.fio_file.attrs['extent_fmt']
 
-        if self.extent_fmt == '(x1, y1), (x2, y2)' and len(self.fio_file.attrs['extent']) == 4:
-            self.extent_x1, self.extent_y1, self.extent_x2, self.extent_y2 = self.fio_file.attrs['extent']
-        elif self.extent_fmt == '[[x1, y1], [x2, y2]]':
-            (self.extent_x1, self.extent_y1), (self.extent_x2, self.extent_y2) = self.fio_file.attrs['extent']
-        else:
-            raise Exception(f'Unknown extent format: {self.extent_fmt}')
+        self.extent_x1, self.extent_y1, self.extent_x2, self.extent_y2 = self._parse_extent(self.fio_file.attrs['extent'], 
+           self.fio_file.attrs['extent_fmt'])
 
         self.n_cols = self.extent_x2 - self.extent_x1
         self.n_rows = self.extent_y1 - self.extent_y2
@@ -351,6 +428,51 @@ class FuelsIO:
         # old attributes (these are removed in new version of fio files)
         #self.dim = self.fio_file.attrs['dimensions']
         #self.dim_fmt = self.fio_file.attrs['dim_format']
+
+        if 'index' in self.fio_file:
+            #print(f'Is index with {self.fio_file["index"]["name"].shape[0]} parts.')
+            self._is_index = True
+
+            extents = []
+
+            # copy all the index data since must faster than accessing
+            # one at a time via s3 api.
+
+            fio_extents = self.fio_file['index']['extent'][:]
+            fio_extent_fmts = self.fio_file['index']['extent_fmt'][:]
+            fio_names = self.fio_file['index']['name'][:]
+
+            if len(fio_names) == 0:
+                print('WARNING: empty index.')
+
+            for i in range(len(fio_names)):
+
+                #print(f'{i} {self.fio_file["index"]["name"][i]}')
+
+                #ext = fio_extents[i]
+                #width = ext[1][0] - ext[0][0]
+                #height = ext[1][1] - ext[0][1]
+                #print(fio_names[i], ext, width, height)
+            
+                x1, y1, x2, y2 = self._parse_extent(fio_extents[i], fio_extent_fmts[i])
+            
+                if y1 > y2:
+                    tmp = y1
+                    y1 = y2
+                    y2 = tmp
+            
+                ring = Polygon([Point(x1, y1),
+                                Point(x2, y1),
+                                Point(x2, y2),
+                                Point(x1, y2)])
+                ring.name = fio_names[i]
+                extents.append(ring)
+
+            self._index_stree = STRtree(extents)
+
+
+        else:
+            self._is_index = False
 
     def parse_contents(self):
         """
@@ -413,7 +535,7 @@ class FuelsIO:
 
         return self.query_geographic(lon, lat, radius, property)
 
-        # changing the way we query fuels in versino 0.3.1
+        # changing the way we query fuels in version 0.3.1
         """
         if mode == 'relative':
             return self.query_relative(a, b)
@@ -449,14 +571,14 @@ class FuelsIO:
             return 0
         return 1
 
-    def query_relative(self, a, b, property=None):
+    def query_relative(self, a, b, property=None, extent=None):
 
         x1, y1 = a
         x2, y2 = b
 
         if self.check_bounds(x1, y1, x2, y2):
             if self.check_cache(x1, y1, x2, y2):
-                return self.slice_and_merge(y1, y2, x1, x2, property)
+                return self.slice_and_merge(y1, y2, x1, x2, property, extent)
             else:
                 print('ERROR: area too large')
         else:
@@ -464,16 +586,86 @@ class FuelsIO:
             return -1
 
     def query_projected(self, a, b, property=None):
-
+        
         x1, y1 = a
         x2, y2 = b
+
+        if self._is_index:
+
+            polygon = Polygon([Point(x1, y1), 
+                Point(x2, y1), 
+                Point(x2, y2), 
+                Point(x1, y2)])
+
+            matches = self._index_stree.query(polygon)
+            num_matches = len(matches)
+
+            if num_matches == 0:
+                print('ERROR: bounding box query not found in index.')
+                return -1
+            elif num_matches == 1:
+                name = matches[0].name
+                print(f'Bounding box query found in single source: {name}')
+                return self._indexed_query_projected(name, a, b, property)
+            else:
+                print(f'WARNING: bounding box query found in multiple ({num_matches}) sources; choosing a single one.')
+
+                # TODO merge together the sources in the requested extent
+
+                # for now, choose the source with the largest intersection
+                max_area = -1
+                max_name = None
+                for i in matches:
+                    intersection = polygon.intersection(i)
+
+                    # note that area = 0 is possible when the intersection is a line
+                    # and not a polygon
+                    area = intersection.area
+                    #print(i.name, area, intersection)
+
+                    if area > max_area:
+                        max_area = area
+                        max_name = i.name
+
+                #print('max is', max_name, max_area)
+                print(f'choosing {max_name}')
+                return self._indexed_query_projected(max_name, a, b, property)
+            
+
+        query_extent = int(x1), int(y1), int(x2), int(y2)
 
         x1_rel = int(x1 - self.extent_x1)
         y1_rel = int(self.extent_y1 - y1)
         x2_rel = int(x2 - self.extent_x1)
         y2_rel = int(self.extent_y1 - y2)
 
-        return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel), property)
+        return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel), property, query_extent)
+
+
+    def _indexed_query_projected(self, name, a, b, property):
+            
+        if name[0] != '/':
+            full_path = '{}/{}'.format(os.path.dirname(self._fio_path.rstrip('/')), name)
+        elif self._ftype == 'local':
+            full_path = name
+        elif self._ftype == 's3':
+            raise Exception('Cannot use absolute paths with S3.')
+
+        if self._ftype == 'local':
+            #print(f'opening {full_path}')
+            fuels = FuelsIO(full_path)
+
+        elif self._ftype == 's3':
+            url = f'{self._fio_endpoint}{full_path}'
+            #print(url)
+            fuels = FuelsIO(url, self._ftype, username=self._fio_username, password=self._fio_password)
+
+        else:
+            raise Exception(f'Unknown type: {self._ftype}')
+
+
+        return fuels.query_projected(a, b, property)
+
 
     def query_geographic(self, lon, lat, radius, property=None):
 
@@ -483,10 +675,10 @@ class FuelsIO:
 
         x2 = x1 + radius*2
         y2 = y1 - radius*2
-
+        
         return self.query_projected((x1, y1), (x2, y2), property)
 
-    def slice_and_merge(self, y1, y2, x1, x2, prop):
+    def slice_and_merge(self, y1, y2, x1, x2, prop, extent):
         """
         Queries the fuel array datasets and loads to memory
 
@@ -537,7 +729,7 @@ class FuelsIO:
         if not prop or 'elevation' in prop:
             data_dict['elevation'] = self.elevation[y1:y2, x1:x2]
 
-        return FuelsROI(data_dict)
+        return FuelsROI(data_dict, extent=extent)
 
 
 class FuelsROI:
@@ -548,15 +740,17 @@ class FuelsROI:
     Attributes:
         data_dict (dictionary): Keys are fuel properties and values are 3D
             arrays
+        extent (list): Extent of ROI
     """
 
-    def __init__(self, data_dict):
+    def __init__(self, data_dict, extent=None):
         """
         initializes attributes and instantiates Viewer and FuelModelWriter
         objects.
         """
 
         self.data_dict = data_dict
+        self.extent = extent
         self.viewer = Viewer(data_dict)
         self.writer = FireModelWriter()
 
@@ -570,15 +764,16 @@ class FuelsROI:
 
         return list(self.data_dict.keys())
 
-    def view(self, property):
+    def view(self, property, topography=False):
         """
         Display 3D array of given fuel property
 
         Args:
             property (str): fuel property
+            topography (bool): use elevation data to show topography
         """
 
-        self.viewer.add(property)
+        self.viewer.add(property, topography)
         self.viewer.show()
 
     def write(self, path, model='quicfire', res_xyz=[1,1,1], property=None):
@@ -594,6 +789,9 @@ class FuelsROI:
 
         if model == 'quicfire':
             print('writing QUICFire input files...')
+
+            # FIXME check property before writing each one
+
             self.writer.write_to_quicfire(self.data_dict['bulk_density'],
                 path + '/' + 'rhof.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['sav'],
@@ -610,7 +808,7 @@ class FuelsROI:
                 raise Exception('Must specify fuel property for VTK output.')
             elif property not in self.data_dict:
                 raise Exception('Invalid fuel property {}'.format(property))
-            self.writer.write_to_vtk(self.data_dict[property], path)
+            self.writer.write_to_vtk(self.data_dict, property, path)
         elif model == 'wfds':
             print('wfds writer not implemented')
 
@@ -650,11 +848,35 @@ class FireModelWriter:
         f = FortranFile(fname, 'w', 'uint32')
         f.write_record(data)
 
-    def write_to_vtk(self, data, fname):
+    def write_to_vtk(self, data, property, fname):
         """
         Write to VTK input file.
         """
-        fp = data
+
+        # FIXME this mostly duplicates Viewer.add()
+
+        fp = data[property]
+
+        if 'elevation' in data:
+
+            #print('data shape', fp.shape)
+            elev_min = np.min(data['elevation'])
+            elev_max = np.max(data['elevation'])
+            elev_diff = elev_max - elev_min
+            #print('elev',  elev_max, '-', elev_min, '=', elev_diff)
+
+            # expand
+            z = np.zeros((fp.shape[0], fp.shape[1], elev_diff), dtype=fp.dtype)
+            fp = np.concatenate((fp,z), axis=2)
+            #print('new data shape', fp.shape)
+
+            # roll
+            for i in range(fp.shape[0]):
+                for j in range(fp.shape[1]):
+                    # np.roll is way to slow so use slicing instead
+                    diff = data['elevation'][i][j] - elev_min + 1
+                    fp[i][j][diff:] = fp[i][j][:-diff]
+                    fp[i][j][:diff] = 0
 
         # move zeros to -1 for thresholding
         fp[fp == 0] = -1
