@@ -10,7 +10,7 @@ README = (HERE / "README.md").read_text()
 setup(
   name = 'fastfuels',
   packages = ['fastfuels'],
-  version = '0.5.1',
+  version = '0.5.2',
   license='GNU GPLv3',
   description = '3D fuelscapes for the contiguous US',
   long_description = README,
@@ -25,6 +25,7 @@ setup(
           'pyvista',
           's3fs',
           'scipy',
+          'shapely',
           'zarr',
       ],
   classifiers=[
@@ -36,4 +37,5 @@ setup(
     'Programming Language :: Python :: 3.5',
     'Programming Language :: Python :: 3.6',
   ],
+  scripts = ['fastfuels/fastfuels_create_index.py']
 )
