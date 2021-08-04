@@ -663,6 +663,8 @@ class FuelsIO:
         else:
             raise Exception(f'Unknown type: {self._ftype}')
 
+        # set cache limit
+        fuels.cache_limit = self.cache_limit
 
         return fuels.query_projected(a, b, property)
 
