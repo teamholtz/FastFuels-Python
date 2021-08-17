@@ -19,11 +19,13 @@ setup(
   author_email = 'lucas@holtzforestry.com',
   url = 'https://github.com/holtzforestry/FastFuels-Python',
   keywords = ['fire model', 'fuelscape', 'wildfire'],
+  # NOTE: as of Aug 2021, latest versions of fsspec and s3fs cause timeout errors.
   install_requires=[
           'colorcet',
+          'fsspec==0.8.3',
           'numpy',
           'pyvista',
-          's3fs',
+          's3fs==0.5.2',
           'scipy',
           'shapely',
           'zarr',
