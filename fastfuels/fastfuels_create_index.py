@@ -6,7 +6,7 @@ This script creates an index of FastFuels zarr files based on their extents.
 
 __author__     = "Daniel Crawl, UCSD"
 __date__       = "29 July 2021"
-__version__    = "0.5.0"
+__version__    = "0.5.4"
 __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"

@@ -5,7 +5,7 @@ perform spatial queries, view fuels data in 3D and export to QuicFire.
 
 __author__     = "Holtz Forestry LLC"
 __date__       = "16 November 2020"
-__version__    = "0.5.0"
+__version__    = "0.5.4"
 __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"
