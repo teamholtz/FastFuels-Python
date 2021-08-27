@@ -28,7 +28,7 @@ setup(
           's3fs==0.5.2',
           'scipy',
           'shapely',
-          'zarr',
+          'zarr>=2.8.3',
       ],
   classifiers=[
     'Development Status :: 3 - Alpha',
