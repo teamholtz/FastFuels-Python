@@ -5,7 +5,7 @@ perform spatial queries, view fuels data in 3D and export to QuicFire.
 
 __author__     = "Holtz Forestry LLC"
 __date__       = "16 November 2020"
-__version__    = "0.5.0"
+__version__    = "0.5.4"
 __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"
@@ -358,20 +358,40 @@ class FuelsIO:
             if url.port:
              endpoint += ":" + str(url.port)
    
-            self._s3 = s3fs.S3FileSystem(client_kwargs={
+            fs = s3fs.S3FileSystem(client_kwargs={
               "endpoint_url": endpoint,
               "verify": False,
               },
               username=username,
               password=password
             )
+
+            # FIXME workaround for bug #769
+            # https://github.com/zarr-developers/zarr-python/issues/769
+            sep = '.'
+            zarray = f'{url.path}/surface/dem/.zarray'
+            if fs.exists(zarray):
+                with fs.open(zarray, 'r') as f:
+                    j = json.load(f)
+                    if 'dimension_separator' in j:
+                        sep = j['dimension_separator']
+
+            fs = None
+
+            self.fio_file = zarr.open_group('s3://' + url.path, mode='r', storage_options={
+                'username': username,
+                'password': password,
+                'client_kwargs': {
+                    "endpoint_url": endpoint,
+                    "verify": False
+                },
+                'dimension_separator': sep
+            })
+            
             self._fio_path = url.path
             self._fio_endpoint = endpoint
             self._fio_username = username
             self._fio_password = password
-
-            store = s3fs.S3Map(root=url.path, s3=self._s3, check=False)
-            self.fio_file = zarr.group(store=store)
 
         else:
             raise Exception('Unknown type: ' + ftype)  
