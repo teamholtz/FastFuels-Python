@@ -27,7 +27,7 @@ setup(
           'pyvista',
           's3fs==0.5.2',
           'scipy',
-          'shapely',
+          'shapely>=1.7.1',
           'zarr>=2.8.3',
       ],
   classifiers=[
