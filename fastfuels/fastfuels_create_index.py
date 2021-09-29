@@ -29,7 +29,7 @@ def parse_extent(extent, extent_fmt):
 def read_input_fios(fios, relative):
 
     fio_files = []
-    for fio_name in sorted(fios):
+    for fio_name in fios:
 
         if fio_name[0] != '/' and not relative:
             print('WARNING: not absolute path {fio_name},')
@@ -58,7 +58,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', action='store_true', help='Overwrite index if it exists.')
     parser.add_argument('-f', nargs=1, required=True, help='Name of index.')
     parser.add_argument('-i', nargs='+', help='Names of files to index.')
-    parser.add_argument('-r', action='store_true', help='Use relative paths instead of absolute.')
+    parser.add_argument('-r', action='store_true', default=True, help='Use relative paths instead of absolute.')
     parser.add_argument('-t', action='store_true', help='Show contents of index.')
     parser.add_argument('-v', action='store_true', help='Turn on verbosity')
     
