@@ -357,14 +357,22 @@ class FuelsIO:
             endpoint = url.scheme + "://" + url.hostname
             if url.port:
              endpoint += ":" + str(url.port)
-   
-            fs = s3fs.S3FileSystem(client_kwargs={
-              "endpoint_url": endpoint,
-              "verify": False,
-              },
-              username=username,
-              password=password
-            )
+  
+            if username and password:
+                fs = s3fs.S3FileSystem(client_kwargs={
+                    "endpoint_url": endpoint,
+                    "verify": False,
+                    },
+                    username=username,
+                    password=password
+                )
+            else:
+                fs = s3fs.S3FileSystem(client_kwargs={
+                    "endpoint_url": endpoint,
+                    "verify": False,
+                    },
+                    anon=True
+                )
 
             # FIXME workaround for bug #769
             # https://github.com/zarr-developers/zarr-python/issues/769
@@ -378,16 +386,21 @@ class FuelsIO:
 
             fs = None
 
-            self.fio_file = zarr.open_group('s3://' + url.path, mode='r', storage_options={
-                'username': username,
-                'password': password,
+            storage_options = {
                 'client_kwargs': {
                     "endpoint_url": endpoint,
                     "verify": False
                 },
                 'dimension_separator': sep
-            })
+            }
+
+            if username and password:
+                storage_options['username'] = username
+                storage_options['password'] = password
+            else:
+                storage_options['anon'] = True
             
+            self.fio_file = zarr.open_group('s3://' + url.path, mode='r', storage_options=storage_options)
             self._fio_path = url.path
             self._fio_endpoint = endpoint
             self._fio_username = username
