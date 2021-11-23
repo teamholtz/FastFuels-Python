@@ -17,7 +17,6 @@ import os
 # external imports
 import colorcet # pip3 install colorcet
 import numpy as np # pip3 install numpy
-import pyvista as pv # pip3 install pyvista
 from scipy.io import FortranFile #pip3 install scipy
 import zarr # pip3 install zarr
 import s3fs # pip3 install s3fs
@@ -214,6 +213,7 @@ class Viewer:
         """
 
         # set pv theme
+        import pyvista as pv # pip3 install pyvista
         pv.set_plot_theme('document')
         self.data = data
         self.plotter = pv.Plotter(title='FastFuels')
@@ -786,7 +786,6 @@ class FuelsROI:
 
         self.data_dict = data_dict
         self.extent = extent
-        self.viewer = Viewer(data_dict)
         self.writer = FireModelWriter()
 
     def get_properties(self):
@@ -808,8 +807,9 @@ class FuelsROI:
             topography (bool): use elevation data to show topography
         """
 
-        self.viewer.add(property, topography)
-        self.viewer.show()
+        viewer = Viewer(self.data_dict)
+        viewer.add(property, topography)
+        viewer.show()
 
     def write(self, path, model='quicfire', res_xyz=[1,1,1], property=None):
         """
@@ -917,6 +917,7 @@ class FireModelWriter:
         fp[fp == 0] = -1
 
         # convert the 3D array to a Pyvista UniformGrid
+        import pyvista as pv # pip3 install pyvista
         grid = pv.UniformGrid()
         grid.dimensions = np.array(fp.shape) + 1
         grid.spacing = [1,1,1]
