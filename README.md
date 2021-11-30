@@ -1,4 +1,4 @@
-# FastFuels
+# FastFuels-Python 
 
 Python client library for the FastFuels API
 
