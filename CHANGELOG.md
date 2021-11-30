@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 11-30-2021
+
 ### Added
 - Changelog for documenting notable changes
 - Github action to auto publish to PyPI on new release
