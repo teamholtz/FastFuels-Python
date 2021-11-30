@@ -3,25 +3,18 @@ The fastfuels module loads a .fio directory-in-file resource on which a user can
 perform spatial queries, view fuels data in 3D and export to QuicFire.
 """
 
-__author__     = "Holtz Forestry LLC"
-__date__       = "16 November 2020"
-__version__    = "0.5.5"
-__maintainer__ = "Lucas Wells"
-__email__      = "lucas@holtzforestry.com"
-__status__     = "Prototype"
-
 import builtins
 import json
 import os
 
 # external imports
-import colorcet # pip3 install colorcet
-import numpy as np # pip3 install numpy
-from scipy.io import FortranFile #pip3 install scipy
-import zarr # pip3 install zarr
-import s3fs # pip3 install s3fs
-from shapely.strtree import STRtree # pip3 install shapely
-from shapely.geometry import Point, Polygon # pip3 install shapely
+import colorcet  # pip3 install colorcet
+import numpy as np  # pip3 install numpy
+from scipy.io import FortranFile  # pip3 install scipy
+import zarr  # pip3 install zarr
+import s3fs  # pip3 install s3fs
+from shapely.strtree import STRtree  # pip3 install shapely
+from shapely.geometry import Point, Polygon  # pip3 install shapely
 
 
 try:
@@ -32,6 +25,8 @@ except ImportError:
 # --------------
 # USERSPACE DEFS
 # --------------
+
+
 def open(fname, ftype='local', username=None, password=None):
     """
     Helper function for opening a .fio file. Additional user actions on
@@ -53,6 +48,8 @@ def open(fname, ftype='local', username=None, password=None):
 # --------------
 # HELPER CLASSES
 # --------------
+
+
 class AlbersEqualAreaConic:
     """
     Implements forward and inverse projection on Albers Equal Area Conic
@@ -92,9 +89,9 @@ class AlbersEqualAreaConic:
         # geographic constants
         self.a = 6378137.0
         # derived geometrical constants
-        f = 1.0/298.2572221010042 # flattening
-        self.e2 = 2*f - f**2 # eccentricity squared
-        self.e = np.sqrt(self.e2) # eccentricity
+        f = 1.0/298.2572221010042  # flattening
+        self.e2 = 2*f - f**2  # eccentricity squared
+        self.e = np.sqrt(self.e2)  # eccentricity
 
         # preliminaries
         m_1 = self._m(phi_1)
@@ -122,7 +119,7 @@ class AlbersEqualAreaConic:
 
         return (1 - self.e2)*(np.sin(phi)/(1 - self.e2*(
             np.sin(phi))**2) - (1.0/(2*self.e))*np.log((1-self.e*np.sin(
-            phi))/(1 + self.e*np.sin(phi))))
+                phi))/(1 + self.e*np.sin(phi))))
 
     def forward(self, lat, lon):
         """
@@ -150,7 +147,7 @@ class AlbersEqualAreaConic:
         x = rho*np.sin(theta)
         y = self.rho_0 - rho*np.cos(theta)
 
-        return x,y
+        return x, y
 
     def inverse(self, x, y):
         """
@@ -187,10 +184,10 @@ class AlbersEqualAreaConic:
         """
 
         return np.radians(np.degrees(phi) + np.degrees((1 -
-            self.e2*(np.sin(phi)**2)**2)/(2*np.cos(phi))*(
+                                                        self.e2*(np.sin(phi)**2)**2)/(2*np.cos(phi))*(
             (q/(1-self.e2)) - (np.sin(phi)/(1-self.e2*(np.sin(phi)**2))) +
             (1/(2*self.e))*np.log((1 - self.e*np.sin(phi))/(1 +
-            self.e*np.sin(phi))))))
+                                                            self.e*np.sin(phi))))))
 
 
 class Viewer:
@@ -213,7 +210,7 @@ class Viewer:
         """
 
         # set pv theme
-        import pyvista as pv # pip3 install pyvista
+        import pyvista as pv  # pip3 install pyvista
         pv.set_plot_theme('document')
         self.data = data
         self.plotter = pv.Plotter(title='FastFuels')
@@ -237,7 +234,8 @@ class Viewer:
         if topography:
 
             if 'elevation' not in self.data:
-                raise Exception('Must query elevation in order to show topography.')
+                raise Exception(
+                    'Must query elevation in order to show topography.')
 
             #print('data shape', fp.shape)
             elev_min = np.min(self.data['elevation'])
@@ -247,7 +245,7 @@ class Viewer:
 
             # expand
             z = np.zeros((fp.shape[0], fp.shape[1], elev_diff), dtype=fp.dtype)
-            fp = np.concatenate((fp,z), axis=2)
+            fp = np.concatenate((fp, z), axis=2)
             #print('new data shape', fp.shape)
 
             # roll
@@ -264,7 +262,7 @@ class Viewer:
         # convert the 3D array to a Pyvista UniformGrid
         grid = pv.UniformGrid()
         grid.dimensions = np.array(fp.shape) + 1
-        grid.spacing = [1,1,1]
+        grid.spacing = [1, 1, 1]
         grid.cell_arrays['values'] = fp.flatten(order='F')
         grid = grid.threshold(0)
 
@@ -316,11 +314,11 @@ class FuelsIO:
         # over to UCSD server
 
         # open connection to fio resource
-        #if fname == 'remote':
+        # if fname == 'remote':
         #    print('connecting to remote FIO server...')
         #    gcs = gcsfs.GCSFileSystem()
         #    self.fio_file = zarr.open(gcs.get_mapper('gs://ca-11-2020/demo.fio'), 'r')
-        #else:
+        # else:
 
         self._ftype = ftype
 
@@ -341,10 +339,12 @@ class FuelsIO:
                     if 'dimension_separator' in j:
                         if j['dimension_separator'] == '/':
                             store = zarr.NestedDirectoryStore(fname)
-                            self.fio_file = zarr.group(store=store, overwrite=False)
+                            self.fio_file = zarr.group(
+                                store=store, overwrite=False)
                         else:
-                            raise Exception(f'Unknown dimension_separator: {j["dimension_separator"]}')
-           
+                            raise Exception(
+                                f'Unknown dimension_separator: {j["dimension_separator"]}')
+
             if not self.fio_file:
                 self.fio_file = zarr.open(fname, 'r')
 
@@ -353,16 +353,16 @@ class FuelsIO:
         elif ftype == 's3':
 
             # use urlparse to separate the hostname and port from path
-            url = urlparse(fname) 
+            url = urlparse(fname)
             endpoint = url.scheme + "://" + url.hostname
             if url.port:
                 endpoint += ":" + str(url.port)
-  
+
             if username and password:
                 fs = s3fs.S3FileSystem(client_kwargs={
                     "endpoint_url": endpoint,
                     "verify": False,
-                    },
+                },
                     username=username,
                     password=password
                 )
@@ -370,7 +370,7 @@ class FuelsIO:
                 fs = s3fs.S3FileSystem(client_kwargs={
                     "endpoint_url": endpoint,
                     "verify": False,
-                    },
+                },
                     anon=True
                 )
 
@@ -399,16 +399,17 @@ class FuelsIO:
                 storage_options['password'] = password
             else:
                 storage_options['anon'] = True
-            
-            self.fio_file = zarr.open_group('s3://' + url.path, mode='r', storage_options=storage_options)
-            
+
+            self.fio_file = zarr.open_group(
+                's3://' + url.path, mode='r', storage_options=storage_options)
+
             self._fio_path = url.path
             self._fio_endpoint = endpoint
             self._fio_username = username
             self._fio_password = password
 
         else:
-            raise Exception('Unknown type: ' + ftype)  
+            raise Exception('Unknown type: ' + ftype)
 
         # get metadata and datasets
         self.extract_meta_data()
@@ -423,11 +424,10 @@ class FuelsIO:
         # default cache limit
         self.cache_limit = 1e9
 
-
     def _parse_extent(self, extent, extent_fmt):
         """
         Parse the extent format to read the extent. Private method.
-        
+
         Returns:
             (x1,y1,x2,y2): the extent bounding box values
         """
@@ -438,19 +438,17 @@ class FuelsIO:
         else:
             raise Exception(f'Unknown extent format: {extent_fmt}')
 
-
     def extract_meta_data(self):
         """
         Gets metadata from fio resource attributes
         """
 
-
         # new fio version changed extent format key from "extent_format" to
         # "extent_fmt"
         self.extent_fmt = self.fio_file.attrs['extent_fmt']
 
-        self.extent_x1, self.extent_y1, self.extent_x2, self.extent_y2 = self._parse_extent(self.fio_file.attrs['extent'], 
-           self.fio_file.attrs['extent_fmt'])
+        self.extent_x1, self.extent_y1, self.extent_x2, self.extent_y2 = self._parse_extent(self.fio_file.attrs['extent'],
+                                                                                            self.fio_file.attrs['extent_fmt'])
 
         self.n_cols = self.extent_x2 - self.extent_x1
         self.n_rows = self.extent_y1 - self.extent_y2
@@ -487,14 +485,15 @@ class FuelsIO:
                 #width = ext[1][0] - ext[0][0]
                 #height = ext[1][1] - ext[0][1]
                 #print(fio_names[i], ext, width, height)
-            
-                x1, y1, x2, y2 = self._parse_extent(fio_extents[i], fio_extent_fmts[i])
-            
+
+                x1, y1, x2, y2 = self._parse_extent(
+                    fio_extents[i], fio_extent_fmts[i])
+
                 if y1 > y2:
                     tmp = y1
                     y1 = y2
                     y2 = tmp
-            
+
                 ring = Polygon([Point(x1, y1),
                                 Point(x2, y1),
                                 Point(x2, y2),
@@ -503,7 +502,6 @@ class FuelsIO:
                 extents.append(ring)
 
             self._index_stree = STRtree(extents)
-
 
         else:
             self._is_index = False
@@ -620,16 +618,16 @@ class FuelsIO:
             return -1
 
     def query_projected(self, a, b, property=None):
-        
+
         x1, y1 = a
         x2, y2 = b
 
         if self._is_index:
 
-            polygon = Polygon([Point(x1, y1), 
-                Point(x2, y1), 
-                Point(x2, y2), 
-                Point(x1, y2)])
+            polygon = Polygon([Point(x1, y1),
+                               Point(x2, y1),
+                               Point(x2, y2),
+                               Point(x1, y2)])
 
             matches = self._index_stree.query(polygon)
             num_matches = len(matches)
@@ -642,7 +640,8 @@ class FuelsIO:
                 print(f'Bounding box query found in single source: {name}')
                 return self._indexed_query_projected(name, a, b, property)
             else:
-                print(f'WARNING: bounding box query found in multiple ({num_matches}) sources; choosing a single one.')
+                print(
+                    f'WARNING: bounding box query found in multiple ({num_matches}) sources; choosing a single one.')
 
                 # TODO merge together the sources in the requested extent
 
@@ -664,7 +663,6 @@ class FuelsIO:
                 #print('max is', max_name, max_area)
                 print(f'choosing {max_name}')
                 return self._indexed_query_projected(max_name, a, b, property)
-            
 
         query_extent = int(x1), int(y1), int(x2), int(y2)
 
@@ -675,11 +673,11 @@ class FuelsIO:
 
         return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel), property, query_extent)
 
-
     def _indexed_query_projected(self, name, a, b, property):
-            
+
         if name[0] != '/':
-            full_path = '{}/{}'.format(os.path.dirname(self._fio_path.rstrip('/')), name)
+            full_path = '{}/{}'.format(os.path.dirname(
+                self._fio_path.rstrip('/')), name)
         elif self._ftype == 'local':
             full_path = name
         elif self._ftype == 's3':
@@ -691,8 +689,9 @@ class FuelsIO:
 
         elif self._ftype == 's3':
             url = f'{self._fio_endpoint}{full_path}'
-            #print(url)
-            fuels = FuelsIO(url, self._ftype, username=self._fio_username, password=self._fio_password)
+            # print(url)
+            fuels = FuelsIO(
+                url, self._ftype, username=self._fio_username, password=self._fio_password)
 
         else:
             raise Exception(f'Unknown type: {self._ftype}')
@@ -702,7 +701,6 @@ class FuelsIO:
 
         return fuels.query_projected(a, b, property)
 
-
     def query_geographic(self, lon, lat, radius, property=None):
 
         x1, y1 = self.albers.forward(lat, lon)
@@ -711,7 +709,7 @@ class FuelsIO:
 
         x2 = x1 + radius*2
         y2 = y1 - radius*2
-        
+
         return self.query_projected((x1, y1), (x2, y2), property)
 
     def slice_and_merge(self, y1, y2, x1, x2, prop, extent):
@@ -725,16 +723,19 @@ class FuelsIO:
         data_dict = {}
 
         if not prop or 'bulk_density' in prop:
-            canopy_bulk_density = self.canopy_bulk_density[y1:y2, x1:x2, :].astype(np.float32)
+            canopy_bulk_density = self.canopy_bulk_density[y1:y2, x1:x2, :].astype(
+                np.float32)
             canopy_bulk_density = (canopy_bulk_density/255)*2.0
 
             canopy_moisture = np.zeros_like(canopy_bulk_density)
-            canopy_moisture[canopy_bulk_density != 0] = 1.0 # hardcoded for now
+            canopy_moisture[canopy_bulk_density !=
+                            0] = 1.0  # hardcoded for now
 
-            surface_loading = self.surface_loading[y1:y2, x1:x2].astype(np.float32)
+            surface_loading = self.surface_loading[y1:y2, x1:x2].astype(
+                np.float32)
             surface_loading = (surface_loading/255)*3.0
 
-            canopy_bulk_density[:,:,0] = surface_loading
+            canopy_bulk_density[:, :, 0] = surface_loading
             data_dict['bulk_density'] = canopy_bulk_density
 
         if not prop or 'sav' in prop:
@@ -744,18 +745,19 @@ class FuelsIO:
             surface_sav = self.surface_sav[y1:y2, x1:x2].astype(np.float32)
             surface_sav = (surface_sav/255)*8000.0
 
-            canopy_sav[:,:,0] = surface_sav
+            canopy_sav[:, :, 0] = surface_sav
             data_dict['sav'] = canopy_sav
 
         if not prop or 'moisture' in prop:
             # surface_emc removed in new fio
             #surface_moisture = self.surface_emc[y1:y2, x1:x2]
-            canopy_moisture[:,:,0] = 0.2 # hardcoded for new
+            canopy_moisture[:, :, 0] = 0.2  # hardcoded for new
             data_dict['moisture'] = canopy_moisture
 
         if not prop or 'fuel_depth' in prop:
             fuel_depth = np.zeros_like(canopy_sav)
-            fuel_depth[:,:,0] = self.surface_fuel_depth[y1:y2, x1:x2].astype(np.float32)
+            fuel_depth[:, :, 0] = self.surface_fuel_depth[y1:y2,
+                                                          x1:x2].astype(np.float32)
             fuel_depth = (fuel_depth/255)*2.0
             data_dict['fuel_depth'] = fuel_depth
 
@@ -812,7 +814,7 @@ class FuelsROI:
         viewer.add(property, topography)
         viewer.show()
 
-    def write(self, path, model='quicfire', res_xyz=[1,1,1], property=None):
+    def write(self, path, model='quicfire', res_xyz=[1, 1, 1], property=None):
         """
         Writes fuel arrays to a fire model. Currently only implements QUICFire
 
@@ -829,15 +831,15 @@ class FuelsROI:
             # FIXME check property before writing each one
 
             self.writer.write_to_quicfire(self.data_dict['bulk_density'],
-                path + '/' + 'rhof.dat', res_xyz)
+                                          path + '/' + 'rhof.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['sav'],
-                path + '/' + 'sav.dat', res_xyz)
+                                          path + '/' + 'sav.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['moisture'],
-                path + '/' + 'moisture.dat', res_xyz)
+                                          path + '/' + 'moisture.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['fuel_depth'],
-                path + '/' + 'fueldepth.dat', res_xyz)
+                                          path + '/' + 'fueldepth.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['elevation'],
-                path + '/' + 'elevation.dat', res_xyz)
+                                          path + '/' + 'elevation.dat', res_xyz)
             print('complete')
         elif model == 'vtk':
             if not property:
@@ -862,20 +864,20 @@ class FireModelWriter:
         print(f'Writing data to {fname}...')
         rx, ry, rz = res_xyz
 
-        if res_xyz == [1,1,1]:
+        if res_xyz == [1, 1, 1]:
             pass
-        elif res_xyz == [2,2,1]:
+        elif res_xyz == [2, 2, 1]:
 
             if len(data.shape) == 3:
-                h,w,d = data.shape
+                h, w, d = data.shape
                 # average pool subsampling
                 data = data.reshape((h//2, 2, w//2, 2, d)).mean(3).mean(1)
             elif len(data.shape) == 2:
-                h,w = data.shape
+                h, w = data.shape
                 data = data.reshape((h//2, 2, w//2, 2)).mean(3).mean(1)
         else:
             print(f'Resolution can be either [1,1,1] or [2,2,1], not {res_xyz}. ' +
-                'Defaulting to [1,1,1] resolution')
+                  'Defaulting to [1,1,1] resolution')
 
         print(f'Output resolution is x: {rx}, y: {ry}, z: {rz}\n')
 
@@ -903,7 +905,7 @@ class FireModelWriter:
 
             # expand
             z = np.zeros((fp.shape[0], fp.shape[1], elev_diff), dtype=fp.dtype)
-            fp = np.concatenate((fp,z), axis=2)
+            fp = np.concatenate((fp, z), axis=2)
             #print('new data shape', fp.shape)
 
             # roll
@@ -918,10 +920,10 @@ class FireModelWriter:
         fp[fp == 0] = -1
 
         # convert the 3D array to a Pyvista UniformGrid
-        import pyvista as pv # pip3 install pyvista
+        import pyvista as pv  # pip3 install pyvista
         grid = pv.UniformGrid()
         grid.dimensions = np.array(fp.shape) + 1
-        grid.spacing = [1,1,1]
+        grid.spacing = [1, 1, 1]
         grid.cell_arrays['values'] = fp.flatten(order='F')
         grid = grid.threshold(0)
 
