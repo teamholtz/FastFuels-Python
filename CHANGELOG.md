@@ -12,3 +12,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Channges
 - Updated setup.py to pull version number from git release tag
+- Change URL for README image to pull from public GCS bucket
