@@ -1,6 +1,6 @@
 # FastFuels
 
-3D fuelscapes for the contiguous US
+Python client library for the FastFuels API
 
 ## Install
 
