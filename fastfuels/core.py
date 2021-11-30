@@ -17,7 +17,6 @@ import os
 # external imports
 import colorcet # pip3 install colorcet
 import numpy as np # pip3 install numpy
-import pyvista as pv # pip3 install pyvista
 from scipy.io import FortranFile #pip3 install scipy
 import zarr # pip3 install zarr
 import s3fs # pip3 install s3fs
@@ -214,6 +213,7 @@ class Viewer:
         """
 
         # set pv theme
+        import pyvista as pv # pip3 install pyvista
         pv.set_plot_theme('document')
         self.data = data
         self.plotter = pv.Plotter(title='FastFuels')
@@ -356,15 +356,23 @@ class FuelsIO:
             url = urlparse(fname) 
             endpoint = url.scheme + "://" + url.hostname
             if url.port:
-             endpoint += ":" + str(url.port)
-   
-            fs = s3fs.S3FileSystem(client_kwargs={
-              "endpoint_url": endpoint,
-              "verify": False,
-              },
-              username=username,
-              password=password
-            )
+                endpoint += ":" + str(url.port)
+  
+            if username and password:
+                fs = s3fs.S3FileSystem(client_kwargs={
+                    "endpoint_url": endpoint,
+                    "verify": False,
+                    },
+                    username=username,
+                    password=password
+                )
+            else:
+                fs = s3fs.S3FileSystem(client_kwargs={
+                    "endpoint_url": endpoint,
+                    "verify": False,
+                    },
+                    anon=True
+                )
 
             # FIXME workaround for bug #769
             # https://github.com/zarr-developers/zarr-python/issues/769
@@ -378,15 +386,21 @@ class FuelsIO:
 
             fs = None
 
-            self.fio_file = zarr.open_group('s3://' + url.path, mode='r', storage_options={
-                'username': username,
-                'password': password,
+            storage_options = {
                 'client_kwargs': {
                     "endpoint_url": endpoint,
                     "verify": False
                 },
                 'dimension_separator': sep
-            })
+            }
+
+            if username and password:
+                storage_options['username'] = username
+                storage_options['password'] = password
+            else:
+                storage_options['anon'] = True
+            
+            self.fio_file = zarr.open_group('s3://' + url.path, mode='r', storage_options=storage_options)
             
             self._fio_path = url.path
             self._fio_endpoint = endpoint
@@ -773,7 +787,6 @@ class FuelsROI:
 
         self.data_dict = data_dict
         self.extent = extent
-        self.viewer = Viewer(data_dict)
         self.writer = FireModelWriter()
 
     def get_properties(self):
@@ -795,8 +808,9 @@ class FuelsROI:
             topography (bool): use elevation data to show topography
         """
 
-        self.viewer.add(property, topography)
-        self.viewer.show()
+        viewer = Viewer(self.data_dict)
+        viewer.add(property, topography)
+        viewer.show()
 
     def write(self, path, model='quicfire', res_xyz=[1,1,1], property=None):
         """
@@ -904,6 +918,7 @@ class FireModelWriter:
         fp[fp == 0] = -1
 
         # convert the 3D array to a Pyvista UniformGrid
+        import pyvista as pv # pip3 install pyvista
         grid = pv.UniformGrid()
         grid.dimensions = np.array(fp.shape) + 1
         grid.spacing = [1,1,1]
