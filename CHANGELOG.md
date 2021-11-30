@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 11-30-2021
+
+### Fixed
+- Typo in setup.py, not get the correct version from git release tag
+
 ## [1.0.0] - 11-30-2021
 
 ### Added

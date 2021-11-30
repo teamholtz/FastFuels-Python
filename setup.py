@@ -4,7 +4,7 @@ import subprocess
 
 # Fetch version number from git tag
 ff_version = (
-    subprocess.run(['git', 'describe', '--tabs'], stdout=subprocess.PIPE)
+    subprocess.run(['git', 'describe', '--tags'], stdout=subprocess.PIPE)
     .stdout.decode('utf-8')
     .strip()
 )
