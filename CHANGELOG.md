@@ -9,3 +9,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Changelog for documenting notable changes
 
+### Channges
+- Updated setup.py to pull version number from git release tag
