@@ -260,6 +260,7 @@ class Viewer:
         fp[fp == 0] = -1
 
         # convert the 3D array to a Pyvista UniformGrid
+        import pyvista as pv  # pip3 install pyvista
         grid = pv.UniformGrid()
         grid.dimensions = np.array(fp.shape) + 1
         grid.spacing = [1, 1, 1]
