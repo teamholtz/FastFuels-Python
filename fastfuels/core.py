@@ -553,20 +553,24 @@ class FuelsIO:
             lat2, lon2 = self.albers.inverse(self.extent_x2, self.extent_y2)
             return lon1, lat1, lon2, lat2
 
-    def query(self, lon, lat, radius, property=None):
+    def query(self, lon, lat, radius=None, xlen=None, ylen=None, property=None):
         """
         Performs a geographic spatial query on the fio resource. Extent of the
-        query is defined by the point (lat, lon) and a square bounding an inscribed
-        circle defined by the radius parameter
+        query is defined by the point (lat, lon) and either a square bounding an 
+        inscribed circle defined by the radius parameter, or a rectangle of width
+        xlen and height ylen. Either radius, or xlen and ylen must be specified,
+        but not both.
 
         Args:
             lon (float): longitude
             lat (float): latitude
-            radius (int): radius of extent circle in meters
+            radius (int, default=None): radius of extent circle in meters
+            xlen (int, default=None): x-length of extent in meters
+            ylen (int, default=None): y-length of extent in meters
             property (list, default=None): properties to query, defaults to every property
         """
 
-        return self.query_geographic(lon, lat, radius, property)
+        return self.query_geographic(lon, lat, radius=radius, xlen=xlen, ylen=ylen, property=property)
 
         # changing the way we query fuels in version 0.3.1
         """
@@ -702,14 +706,33 @@ class FuelsIO:
         return fuels.query_projected(a, b, property)
 
 
-    def query_geographic(self, lon, lat, radius, property=None):
+    def query_geographic(self, lon, lat, radius=None, xlen=None, ylen=None, property=None):
 
         x1, y1 = self.albers.forward(lat, lon)
-        x1 -= radius
-        y1 += radius
 
-        x2 = x1 + radius*2
-        y2 = y1 - radius*2
+        if radius and (xlen or ylen):
+            raise Exception('Either radius, or xlen and ylen can be specified, but not both.')
+        
+        if not (radius or xlen or ylen):
+            raise Exception('Either radius, or xlen and ylen need to be specified, but not both.')
+
+        if radius:
+            if radius < 1:
+                raise Exception('Radius must be greater than 0.')
+           
+            xlen = radius * 2
+            ylen = radius * 2
+       
+        else:
+            if xlen < 2 or ylen < 2 \
+                or xlen % 2 != 0 or ylen % 2 != 0:
+                raise Exception('xlen and ylen must be greater than 1 and divisible by 2.')
+            
+        x1 -= xlen/2
+        y1 += ylen/2
+
+        x2 = x1 + xlen
+        y2 = y1 - ylen
         
         return self.query_projected((x1, y1), (x2, y2), property)
 
@@ -881,14 +904,16 @@ class FireModelWriter:
 
         data = data.astype(np.float32)
    
+        # if 3d, convert from yxz to zyx since this is xyz in fortran
+        # if 2d, don't need to convert since yx is xy in fortran
         if len(data.shape) == 3:
-            # convert from yxz to zyx (3d)
             data = np.moveaxis(data, [0,1,2], [1,2,0])
 
         f = FortranFile(fname, 'w', 'uint32')
+        # NOTE: do NOT transpose the axes
         f.write_record(data)
         f.close()
-        
+
     def write_to_vtk(self, data, property, fname):
         """
         Write to VTK input file.
