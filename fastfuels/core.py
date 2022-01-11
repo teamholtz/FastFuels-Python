@@ -418,7 +418,6 @@ class FuelsIO:
 
         # instantiate helper classes
         self.albers = AlbersEqualAreaConic()
-        self.fmwriter = FireModelWriter()
 
         # default cache limit
         self.cache_limit = 1e9
@@ -677,7 +676,8 @@ class FuelsIO:
         x2_rel = int(x2 - self.extent_x1)
         y2_rel = int(self.extent_y1 - y2)
 
-        return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel), property, query_extent)
+        return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel), 
+                                   property=property, extent=query_extent)
 
 
     def _indexed_query_projected(self, name, a, b, property):
@@ -804,13 +804,13 @@ class FuelsROI:
 
     def __init__(self, data_dict, extent=None):
         """
-        initializes attributes and instantiates Viewer and FuelModelWriter
+        initializes attributes and instantiates Viewer and FirelModelWriter
         objects.
         """
 
         self.data_dict = data_dict
         self.extent = extent
-        self.writer = FireModelWriter()
+        self.writer = FireModelWriter(extent=extent)
 
     def get_properties(self):
         """
@@ -871,6 +871,10 @@ class FuelsROI:
             self.writer.write_to_vtk(self.data_dict, property, path)
         elif model == 'wfds':
             print('wfds writer not implemented')
+        elif model == 'zarr':
+            self.writer.write_to_zarr(self.data_dict, path + '/fastfuels.zarr', res_xyz)
+        else:
+            raise Exception('Unsupported model', model)
 
 
 class FireModelWriter:
@@ -878,17 +882,12 @@ class FireModelWriter:
     Writes fuel arrays to disk as fire model input files
     """
 
-    def write_to_quicfire(self, data, fname, res_xyz):
-        """
-        Write fuel array as QF input file
-        """
+    def __init__(self, extent=None):
+        self.extent = extent
 
-        print(f'Writing data to {fname}...')
-        rx, ry, rz = res_xyz
+    def _change_resolution(self, data, res_xyz):
 
-        if res_xyz == [1,1,1]:
-            pass
-        elif res_xyz == [2,2,1]:
+        if res_xyz == [2,2,1]:
 
             if len(data.shape) == 3:
                 h,w,d = data.shape
@@ -897,13 +896,25 @@ class FireModelWriter:
             elif len(data.shape) == 2:
                 h,w = data.shape
                 data = data.reshape((h//2, 2, w//2, 2)).mean(3).mean(1)
-        else:
+
+        elif res_xyz != [1,1,1]:
+
             print(f'Resolution can be either [1,1,1] or [2,2,1], not {res_xyz}. ' +
                 'Defaulting to [1,1,1] resolution')
 
+        rx, ry, rz = res_xyz
         print(f'Output resolution is x: {rx}, y: {ry}, z: {rz}\n')
 
-        data = data.astype(np.float32)
+        return data.astype(np.float32)
+
+    def write_to_quicfire(self, data, fname, res_xyz):
+        """
+        Write fuel array as QF input file
+        """
+
+        print(f'Writing data to {fname}...')
+
+        data = self._change_resolution(data, res_xyz)
    
         # if 3d, convert from yxz to zyx since this is xyz in fortran
         # if 2d, don't need to convert since yx is xy in fortran
@@ -963,3 +974,47 @@ class FireModelWriter:
         TODO: write to FDS input file
         """
         pass
+
+    def write_to_zarr(self, data, fname, res_xyz):
+
+        print(f'Writing data to {fname}...')
+        
+        z = zarr.open(fname, mode='w')
+
+        # TODO attributes
+        # proj? units?
+
+        z.attrs['dimension'] = ['z', 'y', 'x']
+
+        # write resolution in zyx order
+        z.attrs['resolution'] = [res_xyz[2], res_xyz[1], res_xyz[0]]
+
+        z.attrs['extent'] = self.extent
+        z.attrs['extent_fmt'] ='[[x1, y1], [x2, y2]]'
+
+        canopy = z.create_group('canopy')
+        canopy_chunks = (128, 1000, 1000)
+        for n in ['bulk_density', 'moisture', 'fuel_depth']:
+
+            # first change the resolution so we get the shape for create_dataset()
+            arr_res = self._change_resolution(data[n][:,:,:], res_xyz)
+
+            # convert from yxz to zyx
+            arr_res = np.moveaxis(arr_res, [0,1,2], [1,2,0])
+
+            arr = canopy.create_dataset(n, shape=arr_res.shape,
+                                        chunks=canopy_chunks, dtype='f4')
+            
+            arr[:,:,:] = arr_res
+
+        
+        surface = z.create_group('surface')
+        arr_res = self._change_resolution(data['elevation'][:,:], res_xyz)
+        arr = surface.create_dataset('elevation', shape=arr_res.shape,
+                                     chunks=(3000,3000), dtype='f4')
+        arr[:,:] = arr_res
+
+        # cleanup
+        del arr_res
+        arr = None
+
