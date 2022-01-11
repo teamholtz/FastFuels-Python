@@ -10,7 +10,7 @@ README = (HERE / "README.md").read_text()
 setup(
   name = 'fastfuels',
   packages = ['fastfuels'],
-  version = '0.5.4',
+  version = '0.5.5',
   license='GNU GPLv3',
   description = '3D fuelscapes for the contiguous US',
   long_description = README,
@@ -30,7 +30,7 @@ setup(
           's3fs==2021.11.0',
           'scipy==1.7.2',
           'shapely>=1.7.1',
-          'zarr==2.8.3',
+          'zarr==2.8.3'
       ],
   classifiers=[
     'Development Status :: 3 - Alpha',

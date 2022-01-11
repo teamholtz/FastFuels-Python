@@ -5,7 +5,7 @@ perform spatial queries, view fuels data in 3D and export to QuicFire.
 
 __author__     = "Holtz Forestry LLC"
 __date__       = "16 November 2020"
-__version__    = "0.5.4"
+__version__    = "0.5.5"
 __maintainer__ = "Lucas Wells"
 __email__      = "lucas@holtzforestry.com"
 __status__     = "Prototype"
@@ -356,7 +356,7 @@ class FuelsIO:
             url = urlparse(fname) 
             endpoint = url.scheme + "://" + url.hostname
             if url.port:
-             endpoint += ":" + str(url.port)
+                endpoint += ":" + str(url.port)
   
             if username and password:
                 fs = s3fs.S3FileSystem(client_kwargs={
@@ -401,6 +401,7 @@ class FuelsIO:
                 storage_options['anon'] = True
             
             self.fio_file = zarr.open_group('s3://' + url.path, mode='r', storage_options=storage_options)
+            
             self._fio_path = url.path
             self._fio_endpoint = endpoint
             self._fio_username = username
