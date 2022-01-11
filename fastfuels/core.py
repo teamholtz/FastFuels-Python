@@ -828,15 +828,16 @@ class FuelsROI:
             # FIXME check property before writing each one
 
             self.writer.write_to_quicfire(self.data_dict['bulk_density'],
-                path + '/' + 'rhof.dat', res_xyz)
-            self.writer.write_to_quicfire(self.data_dict['sav'],
-                path + '/' + 'sav.dat', res_xyz)
+                path + '/' + 'bulk_density.dat', res_xyz)
+            #self.writer.write_to_quicfire(self.data_dict['sav'],
+                #path + '/' + 'sav.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['moisture'],
                 path + '/' + 'moisture.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['fuel_depth'],
-                path + '/' + 'fueldepth.dat', res_xyz)
+                path + '/' + 'depth.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['elevation'],
-                path + '/' + 'elevation.dat', res_xyz)
+                path + '/' + 'topo.dat', res_xyz)
+
             print('complete')
         elif model == 'vtk':
             if not property:
@@ -879,10 +880,15 @@ class FireModelWriter:
         print(f'Output resolution is x: {rx}, y: {ry}, z: {rz}\n')
 
         data = data.astype(np.float32)
-        data = data.T
+   
+        if len(data.shape) == 3:
+            # convert from yxz to zyx (3d)
+            data = np.moveaxis(data, [0,1,2], [1,2,0])
+
         f = FortranFile(fname, 'w', 'uint32')
         f.write_record(data)
-
+        f.close()
+        
     def write_to_vtk(self, data, property, fname):
         """
         Write to VTK input file.
