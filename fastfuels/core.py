@@ -994,7 +994,7 @@ class FireModelWriter:
 
         canopy = z.create_group('canopy')
         canopy_chunks = (128, 1000, 1000)
-        for n in ['bulk_density', 'moisture', 'fuel_depth']:
+        for n in ['bulk_density', 'moisture', 'fuel_depth', 'sav']:
 
             # first change the resolution so we get the shape for create_dataset()
             arr_res = self._change_resolution(data[n][:,:,:], res_xyz)
