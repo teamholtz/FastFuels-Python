@@ -835,7 +835,7 @@ class FuelsROI:
         viewer.add(property, topography)
         viewer.show()
 
-    def write(self, path, model='quicfire', res_xyz=[1,1,1], property=None):
+    def write(self, path, model='quicfire', res_xyz=[1,1,1], property=None, **kwargs):
         """
         Writes fuel arrays to a fire model. Currently only implements QUICFire
 
@@ -872,7 +872,10 @@ class FuelsROI:
         elif model == 'wfds':
             print('wfds writer not implemented')
         elif model == 'zarr':
-            self.writer.write_to_zarr(self.data_dict, path + '/fastfuels.zarr', res_xyz)
+            if path:
+                self.writer.write_to_zarr(self.data_dict, path + '/fastfuels.zarr', res_xyz, **kwargs)
+            else:
+                self.writer.write_to_zarr(self.data_dict, None, res_xyz, **kwargs)
         else:
             raise Exception('Unsupported model', model)
 
@@ -975,11 +978,17 @@ class FireModelWriter:
         """
         pass
 
-    def write_to_zarr(self, data, fname, res_xyz):
+    def write_to_zarr(self, data, fname, res_xyz, **kwargs):
 
-        print(f'Writing data to {fname}...')
-        
-        z = zarr.open(fname, mode='w')
+        if 'store' in kwargs:
+            print(f'Writing data to store...')
+        else:
+            print(f'Writing data to {fname}...')
+       
+        if 'store' in kwargs:
+            z = zarr.group(store=kwargs['store'], overwrite=True)
+        else:
+            z = zarr.open(fname, mode='w')
 
         # TODO attributes
         # proj? units?
@@ -1017,4 +1026,3 @@ class FireModelWriter:
         # cleanup
         del arr_res
         arr = None
-
