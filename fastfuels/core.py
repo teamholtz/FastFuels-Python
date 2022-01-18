@@ -980,13 +980,13 @@ class FireModelWriter:
 
     def write_to_zarr(self, data, fname, res_xyz, **kwargs):
 
-        if 'store' in kwargs:
-            print(f'Writing data to store...')
+        if 'zarr' in kwargs:
+            print(f'Writing data to user-supplied zarr...')
         else:
             print(f'Writing data to {fname}...')
        
-        if 'store' in kwargs:
-            z = zarr.group(store=kwargs['store'], overwrite=True)
+        if 'zarr' in kwargs:
+            z = kwargs['zarr']
         else:
             z = zarr.open(fname, mode='w')
 
