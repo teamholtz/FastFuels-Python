@@ -16,7 +16,6 @@ import s3fs  # pip3 install s3fs
 from shapely.strtree import STRtree  # pip3 install shapely
 from shapely.geometry import Point, Polygon  # pip3 install shapely
 
-
 try:
     from urllib.parse import urlparse
 except ImportError:
@@ -1004,9 +1003,9 @@ class FireModelWriter:
                 z.attrs[n] = self.attrs[n]
 
         if 'version' in self.attrs:
-            z.attrs['fastfuels-version'] = self.attrs['version']
+            z.attrs['fastfuels-data-version'] = self.attrs['version']
         else:
-            z.attrs['fastfuels-version'] = 1.0
+            z.attrs['fastfuels-data-version'] = 1.0
 
         z.attrs['dimension'] = ['z', 'y', 'x']
 
