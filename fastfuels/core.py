@@ -788,7 +788,7 @@ class FuelsIO:
         if not prop or 'elevation' in prop:
             data_dict['elevation'] = self.elevation[y1:y2, x1:x2]
 
-        return FuelsROI(data_dict, extent=extent)
+        return FuelsROI(data_dict, extent=extent, attrs=self.fio_file.attrs)
 
 
 class FuelsROI:
@@ -800,9 +800,10 @@ class FuelsROI:
         data_dict (dictionary): Keys are fuel properties and values are 3D
             arrays
         extent (list): Extent of ROI
+        attrs (dictionary): Metadata of fuel zarr file.
     """
 
-    def __init__(self, data_dict, extent=None):
+    def __init__(self, data_dict, extent=None, attrs=None):
         """
         initializes attributes and instantiates Viewer and FirelModelWriter
         objects.
@@ -810,7 +811,7 @@ class FuelsROI:
 
         self.data_dict = data_dict
         self.extent = extent
-        self.writer = FireModelWriter(extent=extent)
+        self.writer = FireModelWriter(extent=extent, attrs=attrs)
 
     def get_properties(self):
         """
@@ -885,8 +886,9 @@ class FireModelWriter:
     Writes fuel arrays to disk as fire model input files
     """
 
-    def __init__(self, extent=None):
+    def __init__(self, extent=None, attrs=None):
         self.extent = extent
+        self.attrs = attrs
 
     def _change_resolution(self, data, res_xyz):
 
@@ -990,8 +992,15 @@ class FireModelWriter:
         else:
             z = zarr.open(fname, mode='w')
 
-        # TODO attributes
-        # proj? units?
+
+        for n in ['proj', 'units']:
+            if n in self.attrs:
+                z.attrs[n] = self.attrs[n]
+
+        if 'version' in self.attrs:
+            z.attrs['fastfuels-version'] = self.attrs['version']
+        else:
+            z.attrs['fastfuels-version'] = 1.0
 
         z.attrs['dimension'] = ['z', 'y', 'x']
 
