@@ -16,7 +16,6 @@ import s3fs  # pip3 install s3fs
 from shapely.strtree import STRtree  # pip3 install shapely
 from shapely.geometry import Point, Polygon  # pip3 install shapely
 
-
 try:
     from urllib.parse import urlparse
 except ImportError:
@@ -420,7 +419,6 @@ class FuelsIO:
 
         # instantiate helper classes
         self.albers = AlbersEqualAreaConic()
-        self.fmwriter = FireModelWriter()
 
         # default cache limit
         self.cache_limit = 1e9
@@ -553,20 +551,24 @@ class FuelsIO:
             lat2, lon2 = self.albers.inverse(self.extent_x2, self.extent_y2)
             return lon1, lat1, lon2, lat2
 
-    def query(self, lon, lat, radius, property=None):
+    def query(self, lon, lat, radius=None, xlen=None, ylen=None, property=None):
         """
         Performs a geographic spatial query on the fio resource. Extent of the
-        query is defined by the point (lat, lon) and a square bounding an inscribed
-        circle defined by the radius parameter
+        query is defined by the point (lat, lon) and either a square bounding an 
+        inscribed circle defined by the radius parameter, or a rectangle of width
+        xlen and height ylen. Either radius, or xlen and ylen must be specified,
+        but not both.
 
         Args:
             lon (float): longitude
             lat (float): latitude
-            radius (int): radius of extent circle in meters
+            radius (int, default=None): radius of extent circle in meters
+            xlen (int, default=None): x-length of extent in meters
+            ylen (int, default=None): y-length of extent in meters
             property (list, default=None): properties to query, defaults to every property
         """
 
-        return self.query_geographic(lon, lat, radius, property)
+        return self.query_geographic(lon, lat, radius=radius, xlen=xlen, ylen=ylen, property=property)
 
         # changing the way we query fuels in version 0.3.1
         """
@@ -672,7 +674,8 @@ class FuelsIO:
         x2_rel = int(x2 - self.extent_x1)
         y2_rel = int(self.extent_y1 - y2)
 
-        return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel), property, query_extent)
+        return self.query_relative((x1_rel, y1_rel), (x2_rel, y2_rel), 
+                                   property=property, extent=query_extent)
 
     def _indexed_query_projected(self, name, a, b, property):
 
@@ -702,15 +705,35 @@ class FuelsIO:
 
         return fuels.query_projected(a, b, property)
 
-    def query_geographic(self, lon, lat, radius, property=None):
+
+    def query_geographic(self, lon, lat, radius=None, xlen=None, ylen=None, property=None):
 
         x1, y1 = self.albers.forward(lat, lon)
-        x1 -= radius
-        y1 += radius
 
-        x2 = x1 + radius*2
-        y2 = y1 - radius*2
+        if radius and (xlen or ylen):
+            raise Exception('Either radius, or xlen and ylen can be specified, but not both.')
+        
+        if not (radius or xlen or ylen):
+            raise Exception('Either radius, or xlen and ylen need to be specified, but not both.')
 
+        if radius:
+            if radius < 1:
+                raise Exception('Radius must be greater than 0.')
+           
+            xlen = radius * 2
+            ylen = radius * 2
+       
+        else:
+            if xlen < 2 or ylen < 2 \
+                or xlen % 2 != 0 or ylen % 2 != 0:
+                raise Exception('xlen and ylen must be greater than 1 and divisible by 2.')
+            
+        x1 -= xlen/2
+        y1 += ylen/2
+
+        x2 = x1 + xlen
+        y2 = y1 - ylen
+        
         return self.query_projected((x1, y1), (x2, y2), property)
 
     def slice_and_merge(self, y1, y2, x1, x2, prop, extent):
@@ -768,7 +791,7 @@ class FuelsIO:
         if not prop or 'elevation' in prop:
             data_dict['elevation'] = self.elevation[y1:y2, x1:x2]
 
-        return FuelsROI(data_dict, extent=extent)
+        return FuelsROI(data_dict, extent=extent, attrs=self.fio_file.attrs)
 
 
 class FuelsROI:
@@ -780,17 +803,18 @@ class FuelsROI:
         data_dict (dictionary): Keys are fuel properties and values are 3D
             arrays
         extent (list): Extent of ROI
+        attrs (dictionary): Metadata of fuel zarr file.
     """
 
-    def __init__(self, data_dict, extent=None):
+    def __init__(self, data_dict, extent=None, attrs=None):
         """
-        initializes attributes and instantiates Viewer and FuelModelWriter
+        initializes attributes and instantiates Viewer and FirelModelWriter
         objects.
         """
 
         self.data_dict = data_dict
         self.extent = extent
-        self.writer = FireModelWriter()
+        self.writer = FireModelWriter(extent=extent, attrs=attrs)
 
     def get_properties(self):
         """
@@ -815,7 +839,7 @@ class FuelsROI:
         viewer.add(property, topography)
         viewer.show()
 
-    def write(self, path, model='quicfire', res_xyz=[1, 1, 1], property=None):
+    def write(self, path, model='quicfire', res_xyz=[1,1,1], property=None, **kwargs):
         """
         Writes fuel arrays to a fire model. Currently only implements QUICFire
 
@@ -832,15 +856,16 @@ class FuelsROI:
             # FIXME check property before writing each one
 
             self.writer.write_to_quicfire(self.data_dict['bulk_density'],
-                                          path + '/' + 'rhof.dat', res_xyz)
-            self.writer.write_to_quicfire(self.data_dict['sav'],
-                                          path + '/' + 'sav.dat', res_xyz)
+                                          path + '/' + 'bulk_density.dat', res_xyz)
+            # NOTE: sav not used by quic-fire
+            #self.writer.write_to_quicfire(self.data_dict['sav'],
+                                          #path + '/' + 'sav.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['moisture'],
                                           path + '/' + 'moisture.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['fuel_depth'],
-                                          path + '/' + 'fueldepth.dat', res_xyz)
+                                          path + '/' + 'depth.dat', res_xyz)
             self.writer.write_to_quicfire(self.data_dict['elevation'],
-                                          path + '/' + 'elevation.dat', res_xyz)
+                                          path + '/' + 'topo.dat', res_xyz)
             print('complete')
         elif model == 'vtk':
             if not property:
@@ -850,6 +875,13 @@ class FuelsROI:
             self.writer.write_to_vtk(self.data_dict, property, path)
         elif model == 'wfds':
             print('wfds writer not implemented')
+        elif model == 'zarr':
+            if path:
+                self.writer.write_to_zarr(self.data_dict, path + '/fastfuels.zarr', res_xyz, **kwargs)
+            else:
+                self.writer.write_to_zarr(self.data_dict, None, res_xyz, **kwargs)
+        else:
+            raise Exception('Unsupported model', model)
 
 
 class FireModelWriter:
@@ -857,13 +889,11 @@ class FireModelWriter:
     Writes fuel arrays to disk as fire model input files
     """
 
-    def write_to_quicfire(self, data, fname, res_xyz):
-        """
-        Write fuel array as QF input file
-        """
+    def __init__(self, extent=None, attrs=None):
+        self.extent = extent
+        self.attrs = attrs
 
-        print(f'Writing data to {fname}...')
-        rx, ry, rz = res_xyz
+    def _change_resolution(self, data, res_xyz):
 
         if res_xyz == [1, 1, 1]:
             pass
@@ -876,16 +906,35 @@ class FireModelWriter:
             elif len(data.shape) == 2:
                 h, w = data.shape
                 data = data.reshape((h//2, 2, w//2, 2)).mean(3).mean(1)
-        else:
+
+        elif res_xyz != [1,1,1]:
+
             print(f'Resolution can be either [1,1,1] or [2,2,1], not {res_xyz}. ' +
                   'Defaulting to [1,1,1] resolution')
 
+        rx, ry, rz = res_xyz
         print(f'Output resolution is x: {rx}, y: {ry}, z: {rz}\n')
 
-        data = data.astype(np.float32)
-        data = data.T
+        return data.astype(np.float32)
+
+    def write_to_quicfire(self, data, fname, res_xyz):
+        """
+        Write fuel array as QF input file
+        """
+
+        print(f'Writing data to {fname}...')
+
+        data = self._change_resolution(data, res_xyz)
+   
+        # if 3d, convert from yxz to zyx since this is xyz in fortran
+        # if 2d, don't need to convert since yx is xy in fortran
+        if len(data.shape) == 3:
+            data = np.moveaxis(data, [0,1,2], [1,2,0])
+
         f = FortranFile(fname, 'w', 'uint32')
+        # NOTE: do NOT transpose the axes
         f.write_record(data)
+        f.close()
 
     def write_to_vtk(self, data, property, fname):
         """
@@ -935,3 +984,59 @@ class FireModelWriter:
         TODO: write to FDS input file
         """
         pass
+
+    def write_to_zarr(self, data, fname, res_xyz, **kwargs):
+
+        if 'zarr' in kwargs:
+            print(f'Writing data to user-supplied zarr...')
+        else:
+            print(f'Writing data to {fname}...')
+       
+        if 'zarr' in kwargs:
+            z = kwargs['zarr']
+        else:
+            z = zarr.open(fname, mode='w')
+
+
+        for n in ['proj', 'units']:
+            if n in self.attrs:
+                z.attrs[n] = self.attrs[n]
+
+        if 'version' in self.attrs:
+            z.attrs['fastfuels-data-version'] = self.attrs['version']
+        else:
+            z.attrs['fastfuels-data-version'] = 1.0
+
+        z.attrs['dimension'] = ['z', 'y', 'x']
+
+        # write resolution in zyx order
+        z.attrs['resolution'] = [res_xyz[2], res_xyz[1], res_xyz[0]]
+
+        z.attrs['extent'] = self.extent
+        z.attrs['extent_fmt'] ='[[x1, y1], [x2, y2]]'
+
+        canopy = z.create_group('canopy')
+        canopy_chunks = (128, 1000, 1000)
+        for n in ['bulk_density', 'moisture', 'fuel_depth', 'sav']:
+
+            # first change the resolution so we get the shape for create_dataset()
+            arr_res = self._change_resolution(data[n][:,:,:], res_xyz)
+
+            # convert from yxz to zyx
+            arr_res = np.moveaxis(arr_res, [0,1,2], [1,2,0])
+
+            arr = canopy.create_dataset(n, shape=arr_res.shape,
+                                        chunks=canopy_chunks, dtype='f4')
+            
+            arr[:,:,:] = arr_res
+
+        
+        surface = z.create_group('surface')
+        arr_res = self._change_resolution(data['elevation'][:,:], res_xyz)
+        arr = surface.create_dataset('elevation', shape=arr_res.shape,
+                                     chunks=(3000,3000), dtype='f4')
+        arr[:,:] = arr_res
+
+        # cleanup
+        del arr_res
+        arr = None
