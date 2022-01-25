@@ -1,6 +1,6 @@
-# FastFuels
+# FastFuels-Python 
 
-3D fuelscapes for the contiguous US
+Python client library for the FastFuels API
 
 ## Install
 
@@ -78,7 +78,7 @@ Then specify one of the properties in the `view()` method on the `roi` object.
 roi.view('sav')
 ```
 
-![FastFuels SAV](./resources/fastfuels_sav.png)
+![FastFuels SAV](https://storage.googleapis.com/fastfuels-landing-page/assets/fastfuels_sav.png)
 
 ### Writing fire model input files
 
