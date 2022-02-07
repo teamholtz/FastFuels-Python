@@ -931,6 +931,10 @@ class FireModelWriter:
         if len(data.shape) == 3:
             data = np.moveaxis(data, [0,1,2], [1,2,0])
 
+        # fastfuels origin is top left, but quicfire uses bottom left
+        # so flip the y-axis
+        data = np.flip(data, len(data.shape) - 2)
+
         f = FortranFile(fname, 'w', 'uint32')
         # NOTE: do NOT transpose the axes
         f.write_record(data)
@@ -1014,6 +1018,7 @@ class FireModelWriter:
 
         z.attrs['extent'] = self.extent
         z.attrs['extent_fmt'] ='[[x1, y1], [x2, y2]]'
+        z.attrs['extent_origin'] = 'bottom left'
 
         canopy = z.create_group('canopy')
         canopy_chunks = (128, 1000, 1000)
@@ -1024,6 +1029,10 @@ class FireModelWriter:
 
             # convert from yxz to zyx
             arr_res = np.moveaxis(arr_res, [0,1,2], [1,2,0])
+        
+            # fastfuels origin is top left, but quicfire uses bottom left
+            # so flip the y-axis
+            arr_res = np.flip(arr_res, len(arr_res.shape) - 2)
 
             arr = canopy.create_dataset(n, shape=arr_res.shape,
                                         chunks=canopy_chunks, dtype='f4')
@@ -1035,6 +1044,11 @@ class FireModelWriter:
         arr_res = self._change_resolution(data['elevation'][:,:], res_xyz)
         arr = surface.create_dataset('elevation', shape=arr_res.shape,
                                      chunks=(3000,3000), dtype='f4')
+            
+        # fastfuels origin is top left, but quicfire uses bottom left
+        # so flip the y-axis
+        arr_res = np.flip(arr_res, len(arr_res.shape) - 2)
+
         arr[:,:] = arr_res
 
         # cleanup
