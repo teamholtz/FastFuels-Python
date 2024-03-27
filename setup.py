@@ -36,7 +36,7 @@ setup(
         # use numpy 1.23 to avoid TypeError: 'numpy._DTypeMeta' object is not subscriptable
         'numpy==1.23.0',
         'pyvista==0.28.1',
-        's3fs==2021.11.0',
+        's3fs==2024.2.0',
         # use newer scipy for numpy 1.23
         'scipy==1.11.4',
         'shapely<2',
