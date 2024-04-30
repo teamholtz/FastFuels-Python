@@ -30,7 +30,7 @@ setup(
     install_requires=[
         # pinning all dependencies to avoid version mismatch
         'colorcet==2.0.6',
-        'fsspec==2021.11.0',
+        'fsspec==2024.2.0',
         # numcodecs no longer includes msgpack?
         'msgpack==1.0.2',
         # use numpy 1.23 to avoid TypeError: 'numpy._DTypeMeta' object is not subscriptable
