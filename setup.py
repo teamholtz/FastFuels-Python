@@ -34,7 +34,7 @@ setup(
         # numcodecs no longer includes msgpack?
         'msgpack==1.0.2',
         # use numpy 1.23 to avoid TypeError: 'numpy._DTypeMeta' object is not subscriptable
-        'numpy==1.23.0',
+        'numpy>=1.23.0,<2',
         'pyvista==0.28.1',
         's3fs==2024.2.0',
         # use newer scipy for numpy 1.23
